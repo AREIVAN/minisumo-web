@@ -35,11 +35,15 @@ export function consumeFixedSteps(
   const accumulated = state.accumulator + elapsedSeconds;
   const requestedSteps = Math.floor(accumulated / fixedTimeStep);
   const steps = Math.min(requestedSteps, maxSubSteps);
-  let remainder = accumulated - steps * fixedTimeStep;
+  // Division and multiplication can round differently at an exact step
+  // boundary (for example, 0.09999999999999999 / (1 / 120) rounds to 12,
+  // while 12 * (1 / 120) rounds to 0.1). The mathematical remainder is zero,
+  // but the raw subtraction can therefore be a tiny negative number.
+  let remainder = Math.max(0, accumulated - steps * fixedTimeStep);
 
   // Drop an excessive backlog instead of simulating an unbounded spiral of death.
   if (requestedSteps > maxSubSteps) {
-    remainder %= fixedTimeStep;
+    remainder = Math.max(0, remainder % fixedTimeStep);
   }
 
   return {

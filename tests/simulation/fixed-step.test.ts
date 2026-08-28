@@ -22,6 +22,16 @@ describe('consumeFixedSteps', () => {
 
     expect(result.steps).toBe(DEFAULT_MAX_SUB_STEPS);
     expect(result.state.accumulator).toBeCloseTo(1 % FIXED_TIME_STEP);
+    expect(result.state.accumulator).toBeGreaterThanOrEqual(0);
+    expect(result.state.accumulator).toBeLessThan(FIXED_TIME_STEP);
+  });
+
+  it('clamps a rounding-negative remainder at an exact step boundary', () => {
+    const result = consumeFixedSteps({ accumulator: 0.09999999999999999 }, 0, FIXED_TIME_STEP);
+
+    expect(result.steps).toBe(12);
+    expect(result.state.accumulator).toBe(0);
+    expect(result.interpolationAlpha).toBe(0);
   });
 
   it('rejects invalid timing parameters', () => {

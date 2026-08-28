@@ -36,6 +36,8 @@ Adaptador aislado para Rapier:
 - colisiones de ruedas, chasis y dohyo;
 - CCD cuando corresponda para evitar atravesar el borde a alta velocidad;
 - estado físico exportado a la capa de render como snapshot.
+- convención de orientación: el frente visual y lógico del robot es el eje local `-Z`; por eso `throttle +1` avanza hacia `-Z` y `steering +1` (derecha) produce yaw físico negativo.
+- la pose inicial de práctica se calcula cerca del borde interior, con el robot mirando hacia el centro y un margen de seguridad para mantener toda la huella dentro del dohyo.
 
 El dohyo no debe ser un cilindro con una pared vertical: eso convertiría el borde en una barrera y no en una salida. Se debe usar una superficie circular sin muro físico o una malla de contacto equivalente, más detección explícita del borde.
 

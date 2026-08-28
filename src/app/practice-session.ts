@@ -7,6 +7,11 @@ import {
 } from '../domain/index';
 import { consumeFixedSteps, FIXED_TIME_STEP, type FixedStepState } from '../simulation/fixed-step';
 import type { InputSource } from '../simulation/input/input-source';
+import {
+  DEFAULT_KEY_BINDINGS,
+  saveKeyBindings,
+  type KeyBindings,
+} from '../simulation/input/key-bindings';
 import { RapierWorld } from '../simulation/physics/rapier-world';
 import { CAMERA_MODE, type CameraMode, ThreeScene } from '../simulation/render/three-scene';
 import { PracticeHud, type PracticeHudSnapshot } from '../ui/practice-hud';
@@ -114,6 +119,16 @@ export class PracticeApplication {
   public toggleControls(): void {
     this.controlsOpen = !this.controlsOpen;
     this.hud.setControlsOpen(this.controlsOpen);
+  }
+
+  public setKeyBindings(bindings: KeyBindings): void {
+    this.input.setKeyBindings?.(bindings);
+    saveKeyBindings(bindings);
+    this.hud.setKeyBindings(bindings);
+  }
+
+  public resetKeyBindings(): void {
+    this.setKeyBindings(DEFAULT_KEY_BINDINGS);
   }
 
   public dispose(): void {

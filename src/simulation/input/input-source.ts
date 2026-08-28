@@ -1,4 +1,5 @@
 import type { DriveCommand } from '../../domain/drive-command';
+import type { KeyBindings } from './key-bindings';
 
 export interface KeyboardState {
   readonly forward: boolean;
@@ -10,6 +11,7 @@ export interface KeyboardState {
 
 export interface InputSource {
   readCommand(): DriveCommand;
+  setKeyBindings?(bindings: KeyBindings): void;
   dispose(): void;
 }
 

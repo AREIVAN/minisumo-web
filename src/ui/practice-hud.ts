@@ -1,5 +1,13 @@
 import { PRACTICE_STATE, type PracticeState } from '../domain/index';
 import { CAMERA_MODE, type CameraMode } from '../simulation/render/three-scene';
+import {
+  DEFAULT_KEY_BINDINGS,
+  formatKeyCode,
+  isMovementAction,
+  updateKeyBinding,
+  type KeyBindings,
+  type MovementAction,
+} from '../simulation/input/key-bindings';
 
 export interface PracticeHudSnapshot {
   readonly status: PracticeState;
@@ -16,9 +24,24 @@ export interface PracticeHudActions {
   readonly onExit: () => void;
   readonly onCameraChange: (mode: CameraMode) => void;
   readonly onControlsToggle: () => void;
+  readonly onKeyBindingsChange: (bindings: KeyBindings) => void;
+  readonly onResetKeyBindings: () => void;
 }
 
-type HudAction = 'start' | 'pause' | 'resume' | 'reset' | 'exit' | 'toggle-controls';
+type HudAction =
+  | 'start'
+  | 'pause'
+  | 'resume'
+  | 'reset'
+  | 'exit'
+  | 'toggle-controls'
+  | 'toggle-remap'
+  | 'reset-key-bindings';
+
+function actionFromElement(element: HTMLElement | null): MovementAction | undefined {
+  const action = element?.dataset.remapAction;
+  return isMovementAction(action) ? action : undefined;
+}
 
 function statusLabel(status: PracticeState): string {
   switch (status) {
@@ -49,6 +72,11 @@ function formatSpeed(speed: number): string {
 }
 
 export class PracticeHud {
+  private keyBindings: KeyBindings;
+  private capturingAction: MovementAction | undefined;
+  private remapFeedback = '';
+  private remapOpen = false;
+
   private readonly onClickBound = (event: MouseEvent): void => {
     const target = event.target;
     if (!(target instanceof Element)) return;
@@ -60,6 +88,12 @@ export class PracticeHud {
       return;
     }
 
+    const remapAction = actionFromElement(target.closest<HTMLElement>('[data-remap-action]'));
+    if (remapAction) {
+      this.startKeyCapture(remapAction);
+      return;
+    }
+
     const cameraElement = target.closest<HTMLElement>('[data-camera]');
     const camera = cameraElement?.dataset.camera as CameraMode | undefined;
     if (camera === CAMERA_MODE.ISOMETRIC || camera === CAMERA_MODE.TOP) {
@@ -67,11 +101,47 @@ export class PracticeHud {
     }
   };
 
+  private readonly onKeyDownBound = (event: KeyboardEvent): void => {
+    if (!this.capturingAction) return;
+
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    if (event.code === 'Escape' || event.key === 'Escape') {
+      this.capturingAction = undefined;
+      this.remapFeedback = 'Asignación cancelada.';
+      this.updateRemapUi();
+      return;
+    }
+
+    const code = event.code;
+    if (!code) {
+      this.remapFeedback = 'No se pudo leer esa tecla. Probá otra.';
+      this.updateRemapUi();
+      return;
+    }
+
+    const nextBindings = updateKeyBinding(this.keyBindings, this.capturingAction, code);
+    if (!nextBindings) {
+      this.remapFeedback = 'Esa tecla está reservada o ya está asignada.';
+      this.updateRemapUi();
+      return;
+    }
+
+    this.keyBindings = nextBindings;
+    this.capturingAction = undefined;
+    this.remapFeedback = `${formatKeyCode(code)} asignada correctamente.`;
+    this.actions.onKeyBindingsChange(nextBindings);
+    this.updateRemapUi();
+  };
+
   public constructor(
     private readonly shell: HTMLElement,
     private readonly actions: PracticeHudActions,
+    keyBindings: KeyBindings = DEFAULT_KEY_BINDINGS,
   ) {
+    this.keyBindings = keyBindings;
     shell.addEventListener('click', this.onClickBound);
+    window.addEventListener('keydown', this.onKeyDownBound);
   }
 
   public renderLoading(): void {
@@ -124,7 +194,7 @@ export class PracticeHud {
         </section>
         <footer class="landing-footer">
           <span>SIMULACIÓN EN UNIDADES SI</span>
-          <span>WASD PARA CONDUCIR</span>
+          <span>TECLAS CONFIGURABLES</span>
         </footer>
       </div>
     `;
@@ -152,12 +222,26 @@ export class PracticeHud {
           <div class="panel-heading"><p class="panel-kicker">CONTROL</p><button class="icon-button" type="button" data-action="toggle-controls" aria-label="Ocultar controles">×</button></div>
           <div class="control-layout">
             <div class="key-cluster" aria-label="Teclas de conducción">
-              <kbd>W</kbd>
-              <div><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></div>
+              <kbd data-binding-key="forward">${formatKeyCode(this.keyBindings.forward)}</kbd>
+              <div><kbd data-binding-key="left">${formatKeyCode(this.keyBindings.left)}</kbd><kbd data-binding-key="reverse">${formatKeyCode(this.keyBindings.reverse)}</kbd><kbd data-binding-key="right">${formatKeyCode(this.keyBindings.right)}</kbd></div>
             </div>
             <p class="control-copy">Acelerar, revertir<br />y girar</p>
           </div>
+          <button class="remap-open-button" type="button" data-action="toggle-remap" aria-expanded="false">Remapear teclas</button>
           <div class="control-hints"><span><kbd>R</kbd> Reiniciar</span><span><kbd>ESC</kbd> Pausa / panel</span></div>
+        </aside>
+
+        <aside id="remap-panel" class="remap-panel panel" aria-label="Remapear teclas de movimiento" hidden>
+          <div class="panel-heading"><p class="panel-kicker">REMAPEO / INPUT</p><button class="icon-button" type="button" data-action="toggle-remap" aria-label="Cerrar remapeo">×</button></div>
+          <p class="remap-instructions">Elegí una acción y presioná la tecla que quieras usar. <strong>Esc</strong> cancela.</p>
+          <div class="binding-list">
+            <div class="binding-row"><span>Avanzar</span><kbd data-binding-key="forward">${formatKeyCode(this.keyBindings.forward)}</kbd><button type="button" class="binding-button" data-remap-action="forward">Asignar</button></div>
+            <div class="binding-row"><span>Retroceder</span><kbd data-binding-key="reverse">${formatKeyCode(this.keyBindings.reverse)}</kbd><button type="button" class="binding-button" data-remap-action="reverse">Asignar</button></div>
+            <div class="binding-row"><span>Girar izquierda</span><kbd data-binding-key="left">${formatKeyCode(this.keyBindings.left)}</kbd><button type="button" class="binding-button" data-remap-action="left">Asignar</button></div>
+            <div class="binding-row"><span>Girar derecha</span><kbd data-binding-key="right">${formatKeyCode(this.keyBindings.right)}</kbd><button type="button" class="binding-button" data-remap-action="right">Asignar</button></div>
+          </div>
+          <p id="remap-feedback" class="remap-feedback" aria-live="polite">${this.remapFeedback}</p>
+          <button class="reset-bindings-button" type="button" data-action="reset-key-bindings">Restablecer WASD</button>
         </aside>
 
         <div class="out-message" id="out-message" role="status" aria-live="assertive" hidden>
@@ -180,6 +264,7 @@ export class PracticeHud {
       </div>
     `;
     this.setControlsOpen(true);
+    this.setRemapOpen(false);
     this.update(snapshot);
   }
 
@@ -215,8 +300,28 @@ export class PracticeHud {
     toggle.textContent = open ? 'Controles' : 'Abrir controles';
   }
 
+  public setKeyBindings(bindings: KeyBindings): void {
+    this.keyBindings = bindings;
+    this.capturingAction = undefined;
+    this.updateRemapUi();
+  }
+
+  public setRemapOpen(open: boolean): void {
+    this.remapOpen = open;
+    if (!open) this.capturingAction = undefined;
+    const panel = this.shell.querySelector<HTMLElement>('#remap-panel');
+    if (panel) panel.hidden = !open;
+    this.shell
+      .querySelectorAll<HTMLButtonElement>('[data-action="toggle-remap"]')
+      .forEach((button) => {
+        button.setAttribute('aria-expanded', String(open));
+      });
+    this.updateRemapUi();
+  }
+
   public dispose(): void {
     this.shell.removeEventListener('click', this.onClickBound);
+    window.removeEventListener('keydown', this.onKeyDownBound);
   }
 
   private handleAction(action: HudAction): void {
@@ -239,6 +344,37 @@ export class PracticeHud {
       case 'toggle-controls':
         this.actions.onControlsToggle();
         break;
+      case 'toggle-remap':
+        this.setRemapOpen(!this.remapOpen);
+        break;
+      case 'reset-key-bindings':
+        this.actions.onResetKeyBindings();
+        break;
     }
+  }
+
+  private startKeyCapture(action: MovementAction): void {
+    this.capturingAction = action;
+    this.remapFeedback = 'Presioná una tecla…';
+    this.updateRemapUi();
+  }
+
+  private updateRemapUi(): void {
+    const panel = this.shell.querySelector<HTMLElement>('#remap-panel');
+    if (!panel) return;
+
+    (Object.keys(this.keyBindings) as MovementAction[]).forEach((action) => {
+      this.shell.querySelectorAll<HTMLElement>(`[data-binding-key="${action}"]`).forEach((key) => {
+        key.textContent = formatKeyCode(this.keyBindings[action]);
+      });
+      const button = panel.querySelector<HTMLButtonElement>(`[data-remap-action="${action}"]`);
+      if (button) {
+        button.textContent = this.capturingAction === action ? 'Presioná una tecla' : 'Asignar';
+        button.setAttribute('aria-pressed', String(this.capturingAction === action));
+      }
+    });
+
+    const feedback = panel.querySelector<HTMLElement>('#remap-feedback');
+    if (feedback) feedback.textContent = this.remapFeedback;
   }
 }

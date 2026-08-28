@@ -62,7 +62,7 @@ export function createRobotMesh(spec: RobotSpec): THREE.Group {
     new THREE.BoxGeometry(spec.width * 0.72, 0.006, 0.008),
     new THREE.MeshStandardMaterial({ color: 0x77e5c0, roughness: 0.35, metalness: 0.45 }),
   );
-  frontMarker.position.set(0, spec.height * 0.18, spec.depth * 0.43);
+  frontMarker.position.set(0, spec.height * 0.18, -spec.depth * 0.43);
   frontMarker.castShadow = true;
   frontMarker.name = 'front-marker';
   group.add(frontMarker);

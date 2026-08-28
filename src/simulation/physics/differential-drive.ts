@@ -44,7 +44,9 @@ export function calculateDifferentialWheelSpeeds(
   const normalizedThrottle = clamp(throttle, -1, 1);
   const normalizedSteering = clamp(steering, -1, 1);
   const forwardSpeed = normalizedThrottle * config.maxWheelSpeed;
-  const yawRate = normalizedSteering * config.maxYawRate;
+  // The robot's visual/logical front is local -Z. In that frame a logical
+  // right turn rotates the body around physical -Y, so the left wheel leads.
+  const yawRate = normalizedSteering === 0 ? 0 : -normalizedSteering * config.maxYawRate;
   const differential = (yawRate * config.trackWidth) / 2;
 
   return {

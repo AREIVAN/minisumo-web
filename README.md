@@ -13,6 +13,8 @@ Simulador web de práctica para robots Mini Sumo. Conducí un robot de 10 cm den
 - Detección de salida basada en la huella completa del robot, incluso con rotación.
 - Cámaras isométrica y superior.
 - HUD de práctica con estado, tiempo, velocidad, pausa, reinicio y controles.
+- Remapeo persistente de las cuatro teclas de movimiento desde el panel de controles.
+- Reinicio del robot cerca del borde interior del dohyo, orientado hacia el centro para practicar la salida.
 - Núcleo de dominio desacoplado del DOM y de los adaptadores gráficos/físicos.
 
 ## Requisitos
@@ -24,9 +26,7 @@ Simulador web de práctica para robots Mini Sumo. Conducí un robot de 10 cm den
 ## Inicio rápido
 
 ```bash
-git clone https://github.com/AREIVAN/minisumo-web.git
-cd minisumo-web
-npm ci
+npm install
 npm run dev
 ```
 
@@ -42,15 +42,17 @@ Este comando ejecuta el chequeo de TypeScript, ESLint y la suite de tests de Vit
 
 ## Controles
 
-| Acción | Tecla |
-| --- | --- |
-| Avanzar | `W` |
-| Retroceder | `S` |
-| Girar a la izquierda | `A` |
-| Girar a la derecha | `D` |
-| Reiniciar posición | `R` |
-| Pausar o reanudar | `Esc` |
-| Cambiar cámara | Botón en pantalla |
+| Acción               | Tecla predeterminada |
+| -------------------- | -------------------- |
+| Avanzar              | `W`                  |
+| Retroceder           | `S`                  |
+| Girar a la izquierda | `A`                  |
+| Girar a la derecha   | `D`                  |
+| Reiniciar posición   | `R`                  |
+| Pausar o reanudar    | `Esc`                |
+| Cambiar cámara       | Botón en pantalla    |
+
+En **Remapear teclas** podés asignar otras teclas a las cuatro acciones de movimiento. `R` y `Esc` se mantienen fijas para evitar conflictos con reset y pausa.
 
 La tawara **no funciona como una pared invisible**. El robot puede abandonar físicamente la superficie y la sesión pasa a estado de salida cuando una parte de su huella supera el radio reglamentario.
 
@@ -80,15 +82,15 @@ La explicación completa está en [`docs/architecture.md`](docs/architecture.md)
 
 ## Scripts disponibles
 
-| Comando | Propósito |
-| --- | --- |
-| `npm run dev` | Inicia el servidor de desarrollo en el puerto 4173. |
-| `npm run typecheck` | Verifica el proyecto TypeScript. |
-| `npm run lint` | Ejecuta ESLint. |
-| `npm test -- --run` | Ejecuta los tests una vez. |
-| `npm run check` | Ejecuta typecheck, lint y tests. |
-| `npm run format` | Formatea los archivos con Prettier. |
-| `npm run format:check` | Comprueba el formato sin modificar archivos. |
+| Comando                | Propósito                                           |
+| ---------------------- | --------------------------------------------------- |
+| `npm run dev`          | Inicia el servidor de desarrollo en el puerto 4173. |
+| `npm run typecheck`    | Verifica el proyecto TypeScript.                    |
+| `npm run lint`         | Ejecuta ESLint.                                     |
+| `npm test -- --run`    | Ejecuta los tests una vez.                          |
+| `npm run check`        | Ejecuta typecheck, lint y tests.                    |
+| `npm run format`       | Formatea los archivos con Prettier.                 |
+| `npm run format:check` | Comprueba el formato sin modificar archivos.        |
 
 ## Estructura principal
 

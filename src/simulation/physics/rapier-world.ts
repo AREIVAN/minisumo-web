@@ -14,7 +14,19 @@ import {
 
 export const DOHYO_SURFACE_THICKNESS = 0.006;
 export const DOHYO_SURFACE_TOP = 0;
-export const INITIAL_ROBOT_POSE: Pose2 = { x: 0, y: 0, yaw: 0 };
+export const INITIAL_ROBOT_EDGE_MARGIN = 0.01;
+
+export function calculateInitialRobotPose(dohyo: DohyoSpec, robot: RobotSpec): Pose2 {
+  const footprintRadius = Math.hypot(robot.width / 2, robot.depth / 2);
+  const centerRadius = dohyo.innerRadius - footprintRadius - INITIAL_ROBOT_EDGE_MARGIN;
+  if (centerRadius <= 0) {
+    throw new RangeError('dohyo is too small for a safe edge starting pose.');
+  }
+
+  // Start near the inner edge, facing the center: local -Z points toward
+  // decreasing world-Z at yaw 0.
+  return { x: 0, y: centerRadius, yaw: 0 };
+}
 
 export interface PhysicsSnapshot {
   readonly pose: Pose2;
@@ -62,12 +74,14 @@ export class RapierWorld {
   private readonly dohyo: DohyoSpec;
   private readonly robot: RobotSpec;
   private readonly drive: DifferentialDriveConfig;
+  private readonly initialPose: Pose2;
   private disposed = false;
 
   private constructor(dohyo: DohyoSpec, robot: RobotSpec, drive: DifferentialDriveConfig) {
     this.dohyo = dohyo;
     this.robot = robot;
     this.drive = drive;
+    this.initialPose = calculateInitialRobotPose(dohyo, robot);
     this.boundaryDetector = new BoundaryDetector(dohyo, robot);
     this.world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
     this.world.timestep = 1 / 120;
@@ -101,6 +115,8 @@ export class RapierWorld {
 
   public halt(): void {
     this.assertNotDisposed();
+    this.robotBody.resetForces(true);
+    this.robotBody.resetTorques(true);
     this.robotBody.setLinvel({ x: 0, y: 0, z: 0 }, true);
     this.robotBody.setAngvel({ x: 0, y: 0, z: 0 }, true);
     this.robotBody.setEnabled(false);
@@ -109,15 +125,17 @@ export class RapierWorld {
   public reset(): PhysicsSnapshot {
     this.assertNotDisposed();
     this.robotBody.setEnabled(true);
+    this.robotBody.resetForces(true);
+    this.robotBody.resetTorques(true);
     this.robotBody.setTranslation(
       {
-        x: INITIAL_ROBOT_POSE.x,
+        x: this.initialPose.x,
         y: this.robot.height / 2 + 0.002,
-        z: INITIAL_ROBOT_POSE.y,
+        z: this.initialPose.y,
       },
       true,
     );
-    this.robotBody.setRotation(yawRotation(INITIAL_ROBOT_POSE.yaw), true);
+    this.robotBody.setRotation(yawRotation(this.initialPose.yaw), true);
     this.robotBody.setLinvel({ x: 0, y: 0, z: 0 }, true);
     this.robotBody.setAngvel({ x: 0, y: 0, z: 0 }, true);
     this.world.propagateModifiedBodyPositionsToColliders();
@@ -165,7 +183,7 @@ export class RapierWorld {
   private createRobotBody(): RAPIER.RigidBody {
     const body = this.world.createRigidBody(
       RAPIER.RigidBodyDesc.dynamic()
-        .setTranslation(0, this.robot.height / 2 + 0.002, 0)
+        .setTranslation(this.initialPose.x, this.robot.height / 2 + 0.002, this.initialPose.y)
         .setGravityScale(1)
         .setLinearDamping(1.6)
         .setAngularDamping(3.2)
@@ -218,7 +236,9 @@ export class RapierWorld {
     );
     const rotation = this.robotBody.rotation();
     const yaw = yawFromRotation(rotation);
-    const forward = { x: Math.sin(yaw), z: Math.cos(yaw) };
+    // The robot's front is local -Z. Rapier/Three yaw therefore maps that
+    // direction to {-sin(yaw), -cos(yaw)} in the X/Z plane.
+    const forward = { x: -Math.sin(yaw), z: -Math.cos(yaw) };
     const right = { x: Math.cos(yaw), z: -Math.sin(yaw) };
     const velocity = this.robotBody.linvel();
     const forwardVelocity = velocity.x * forward.x + velocity.z * forward.z;
@@ -239,6 +259,8 @@ export class RapierWorld {
     );
 
     const angularVelocity = this.robotBody.angvel().y;
+    // calculateDifferentialWheelSpeeds already converts logical right (+1)
+    // into physical negative yaw for this local -Z orientation.
     const yawTorque = clamp((wheelSpeeds.yawRate - angularVelocity) * 0.005, -0.035, 0.035);
     this.robotBody.addTorque({ x: 0, y: yawTorque, z: 0 }, true);
   }

@@ -12,7 +12,7 @@ Una web de práctica Mini Sumo, inspirada en la claridad de Arena Tapout pero co
 - [x] Fijar Node 24, dependencias y scripts.
 - [x] Agregar ESLint, Prettier y Vitest.
 - [x] Documentar reglas, arquitectura y límites del MVP.
-- [ ] Conectar el repositorio remoto de GitHub cuando exista su URL.
+- [x] Conectar el repositorio remoto de GitHub.
 
 **Salida:** proyecto reproducible, documentado y con un vertical slice funcional.
 

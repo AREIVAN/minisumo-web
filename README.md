@@ -24,7 +24,7 @@ Simulador web de práctica para robots Mini Sumo. Conducí un robot de 10 cm den
 ## Inicio rápido
 
 ```bash
-git clone <URL_DEL_REPOSITORIO>
+git clone https://github.com/AREIVAN/minisumo-web.git
 cd minisumo-web
 npm ci
 npm run dev

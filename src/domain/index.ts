@@ -7,6 +7,9 @@ export {
 } from './arena/dohyo-spec';
 export type { DohyoProfile, DohyoSpec, DohyoSpecInput } from './arena/dohyo-spec';
 
+export { PRACTICE_PUSHABLE_OBJECT_SPEC, createPushableObjectSpec } from './arena/pushable-object';
+export type { PushableObjectSpec } from './arena/pushable-object';
+
 export {
   BOUNDARY_EPSILON,
   BOUNDARY_STATUS,

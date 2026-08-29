@@ -10,11 +10,13 @@ Simulador web de práctica para robots Mini Sumo. Conducí un robot de 10 cm den
 - Dohyo circular de 77 cm de diámetro con tawara visible de 2,5 cm.
 - Física Rapier en metros y kilogramos, con paso fijo de 1/120 s.
 - Robot de práctica de 10 × 10 cm con tracción diferencial.
+- Objetivo cilíndrico dinámico de práctica, ubicado en el centro y empujable por el robot por todo el dohyo.
 - Detección de salida basada en la huella completa del robot, incluso con rotación.
 - Cámaras isométrica y superior.
 - HUD de práctica con estado, tiempo, velocidad, pausa, reinicio y controles.
 - Remapeo persistente de las cuatro teclas de movimiento desde el panel de controles.
 - Reinicio del robot cerca del borde interior del dohyo, orientado hacia el centro para practicar la salida.
+- Reinicio conjunto del robot y del objetivo cilíndrico a sus posiciones iniciales.
 - Núcleo de dominio desacoplado del DOM y de los adaptadores gráficos/físicos.
 
 ## Requisitos
@@ -74,6 +76,7 @@ Algunas decisiones importantes del MVP:
 
 - El dominio contiene las reglas comprobables: dimensiones, estados de sesión, comandos y límites del dohyo.
 - Rapier modela la superficie y el cuerpo del robot, pero no agrega un muro perimetral que falsee el comportamiento del borde.
+- Rapier también modela el objetivo como un cuerpo dinámico independiente: el contacto robot-objetivo produce un empuje físico real y permite desplazarlo por todo el dohyo.
 - El loop usa pasos físicos fijos para que el resultado no dependa directamente del framerate.
 - Three.js recibe snapshots físicos y se ocupa únicamente de la representación visual.
 - La entrada de teclado se normaliza antes de llegar a la aplicación.
@@ -97,7 +100,7 @@ La explicación completa está en [`docs/architecture.md`](docs/architecture.md)
 ```text
 src/
   app/          Orquestación de la sesión de práctica
-  domain/       Reglas puras de dohyo, robot y estados
+  domain/       Reglas puras de dohyo, robot, objetivo y estados
   simulation/   Entrada, física Rapier y render Three.js
   ui/           HUD, menús y telemetría
 tests/

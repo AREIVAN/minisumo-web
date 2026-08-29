@@ -53,6 +53,8 @@ Una web de práctica Mini Sumo, inspirada en la claridad de Arena Tapout pero co
 - [x] Indicador de velocidad y estado.
 - [x] Mensaje claro de “robot fuera del dohyo”.
 - [x] Modo libre manual con pausa, reinicio y salida.
+- [x] Agregar un objetivo cilíndrico dinámico en el centro para practicar empuje por todo el dohyo.
+- [x] Reiniciar y detener de forma consistente el robot y el objetivo.
 - La ronda oficial de 3 minutos y `localStorage` quedan fuera del primer corte funcional.
 
 **Aceptación:** una persona puede practicar sin leer documentación externa.

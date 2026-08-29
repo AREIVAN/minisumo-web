@@ -1,7 +1,13 @@
 import * as THREE from 'three';
-import type { DohyoSpec, RobotSpec } from '../../domain/index';
+import {
+  PRACTICE_PUSHABLE_OBJECT_SPEC,
+  type DohyoSpec,
+  type PushableObjectSpec,
+  type RobotSpec,
+} from '../../domain/index';
 import type { PhysicsSnapshot } from '../physics/rapier-world';
 import { createDohyoMesh } from './dohyo-mesh';
+import { createPushableObjectMesh } from './pushable-object-mesh';
 import { createRobotMesh } from './robot-mesh';
 
 export const CAMERA_MODE = {
@@ -24,10 +30,16 @@ export class ThreeScene {
   private readonly scene: THREE.Scene;
   private readonly camera: THREE.PerspectiveCamera;
   private readonly robot: THREE.Group;
+  private readonly pushableObject: THREE.Group;
   private cameraMode: CameraMode = CAMERA_MODE.ISOMETRIC;
   private disposed = false;
 
-  public constructor(canvas: HTMLCanvasElement, dohyo: DohyoSpec, robotSpec: RobotSpec) {
+  public constructor(
+    canvas: HTMLCanvasElement,
+    dohyo: DohyoSpec,
+    robotSpec: RobotSpec,
+    pushableObjectSpec: PushableObjectSpec = PRACTICE_PUSHABLE_OBJECT_SPEC,
+  ) {
     if (!isWebGLAvailable(canvas)) {
       throw new Error(
         'WebGL no está disponible en este navegador. Probá activar la aceleración gráfica o usar otro navegador.',
@@ -58,6 +70,8 @@ export class ThreeScene {
     this.scene.add(createDohyoMesh(dohyo));
     this.robot = createRobotMesh(robotSpec);
     this.scene.add(this.robot);
+    this.pushableObject = createPushableObjectMesh(pushableObjectSpec);
+    this.scene.add(this.pushableObject);
     this.resize();
     window.addEventListener('resize', this.resizeBound);
   }
@@ -70,6 +84,12 @@ export class ThreeScene {
     this.assertNotDisposed();
     this.robot.position.set(snapshot.pose.x, snapshot.verticalPosition, snapshot.pose.y);
     this.robot.rotation.set(0, snapshot.pose.yaw, 0);
+    this.pushableObject.position.set(
+      snapshot.pushableObject.pose.x,
+      snapshot.pushableObject.verticalPosition,
+      snapshot.pushableObject.pose.y,
+    );
+    this.pushableObject.rotation.set(0, snapshot.pushableObject.pose.yaw, 0);
     this.renderer.render(this.scene, this.camera);
   }
 

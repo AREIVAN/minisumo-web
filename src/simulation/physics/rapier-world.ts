@@ -4,6 +4,8 @@ import {
   type DohyoSpec,
   type DriveCommand,
   type Pose2,
+  PRACTICE_PUSHABLE_OBJECT_SPEC,
+  type PushableObjectSpec,
   type RobotSpec,
 } from '../../domain/index';
 import {
@@ -15,6 +17,7 @@ import {
 export const DOHYO_SURFACE_THICKNESS = 0.006;
 export const DOHYO_SURFACE_TOP = 0;
 export const INITIAL_ROBOT_EDGE_MARGIN = 0.01;
+export const PUSHABLE_OBJECT_SAFETY_MARGIN = 0.01;
 
 export function calculateInitialRobotPose(dohyo: DohyoSpec, robot: RobotSpec): Pose2 {
   const footprintRadius = Math.hypot(robot.width / 2, robot.depth / 2);
@@ -28,11 +31,29 @@ export function calculateInitialRobotPose(dohyo: DohyoSpec, robot: RobotSpec): P
   return { x: 0, y: centerRadius, yaw: 0 };
 }
 
+export function calculateInitialPushableObjectPose(
+  dohyo: DohyoSpec,
+  object: PushableObjectSpec,
+): Pose2 {
+  if (dohyo.innerRadius - object.radius - PUSHABLE_OBJECT_SAFETY_MARGIN <= 0) {
+    throw new RangeError('dohyo is too small for a safe pushable object starting pose.');
+  }
+
+  // Start at the center so the robot can push the target through the entire dohyo.
+  return { x: 0, y: 0, yaw: 0 };
+}
+
+export interface PushableObjectSnapshot {
+  readonly pose: Pose2;
+  readonly verticalPosition: number;
+}
+
 export interface PhysicsSnapshot {
   readonly pose: Pose2;
   readonly verticalPosition: number;
   readonly speed: number;
   readonly yawRate: number;
+  readonly pushableObject: PushableObjectSnapshot;
 }
 
 let rapierInitialization: Promise<void> | undefined;
@@ -63,25 +84,36 @@ export class RapierWorld {
     dohyo: DohyoSpec,
     robot: RobotSpec,
     drive: DifferentialDriveConfig = PRACTICE_DRIVE_CONFIG,
+    pushableObject: PushableObjectSpec = PRACTICE_PUSHABLE_OBJECT_SPEC,
   ): Promise<RapierWorld> {
     await initializeRapier();
-    return new RapierWorld(dohyo, robot, drive);
+    return new RapierWorld(dohyo, robot, drive, pushableObject);
   }
 
   private readonly world: RAPIER.World;
   private readonly robotBody: RAPIER.RigidBody;
+  private readonly pushableObjectBody: RAPIER.RigidBody;
   private readonly boundaryDetector: BoundaryDetector;
   private readonly dohyo: DohyoSpec;
   private readonly robot: RobotSpec;
+  private readonly pushableObject: PushableObjectSpec;
   private readonly drive: DifferentialDriveConfig;
   private readonly initialPose: Pose2;
+  private readonly initialPushableObjectPose: Pose2;
   private disposed = false;
 
-  private constructor(dohyo: DohyoSpec, robot: RobotSpec, drive: DifferentialDriveConfig) {
+  private constructor(
+    dohyo: DohyoSpec,
+    robot: RobotSpec,
+    drive: DifferentialDriveConfig,
+    pushableObject: PushableObjectSpec,
+  ) {
     this.dohyo = dohyo;
     this.robot = robot;
+    this.pushableObject = pushableObject;
     this.drive = drive;
     this.initialPose = calculateInitialRobotPose(dohyo, robot);
+    this.initialPushableObjectPose = calculateInitialPushableObjectPose(dohyo, pushableObject);
     this.boundaryDetector = new BoundaryDetector(dohyo, robot);
     this.world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
     this.world.timestep = 1 / 120;
@@ -90,6 +122,7 @@ export class RapierWorld {
 
     this.createDohyoSurface();
     this.robotBody = this.createRobotBody();
+    this.pushableObjectBody = this.createPushableObjectBody();
   }
 
   public get snapshot(): PhysicsSnapshot {
@@ -99,8 +132,10 @@ export class RapierWorld {
 
   public step(command: DriveCommand): PhysicsSnapshot {
     this.assertNotDisposed();
-    if (this.robotBody.isValid() && this.robotBody.isSleeping()) {
-      this.robotBody.wakeUp();
+    for (const body of [this.robotBody, this.pushableObjectBody]) {
+      if (body.isValid() && body.isSleeping()) {
+        body.wakeUp();
+      }
     }
     this.applyDrive(command);
     this.world.step();
@@ -115,29 +150,18 @@ export class RapierWorld {
 
   public halt(): void {
     this.assertNotDisposed();
-    this.robotBody.resetForces(true);
-    this.robotBody.resetTorques(true);
-    this.robotBody.setLinvel({ x: 0, y: 0, z: 0 }, true);
-    this.robotBody.setAngvel({ x: 0, y: 0, z: 0 }, true);
-    this.robotBody.setEnabled(false);
+    this.haltBody(this.robotBody);
+    this.haltBody(this.pushableObjectBody);
   }
 
   public reset(): PhysicsSnapshot {
     this.assertNotDisposed();
-    this.robotBody.setEnabled(true);
-    this.robotBody.resetForces(true);
-    this.robotBody.resetTorques(true);
-    this.robotBody.setTranslation(
-      {
-        x: this.initialPose.x,
-        y: this.robot.height / 2 + 0.002,
-        z: this.initialPose.y,
-      },
-      true,
+    this.resetBody(this.robotBody, this.initialPose, this.robot.height);
+    this.resetBody(
+      this.pushableObjectBody,
+      this.initialPushableObjectPose,
+      this.pushableObject.height,
     );
-    this.robotBody.setRotation(yawRotation(this.initialPose.yaw), true);
-    this.robotBody.setLinvel({ x: 0, y: 0, z: 0 }, true);
-    this.robotBody.setAngvel({ x: 0, y: 0, z: 0 }, true);
     this.world.propagateModifiedBodyPositionsToColliders();
     return this.readSnapshot();
   }
@@ -147,6 +171,31 @@ export class RapierWorld {
       this.world.free();
       this.disposed = true;
     }
+  }
+
+  private haltBody(body: RAPIER.RigidBody): void {
+    body.resetForces(true);
+    body.resetTorques(true);
+    body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+    body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+    body.setEnabled(false);
+  }
+
+  private resetBody(body: RAPIER.RigidBody, pose: Pose2, height: number): void {
+    body.setEnabled(true);
+    body.resetForces(true);
+    body.resetTorques(true);
+    body.setTranslation(
+      {
+        x: pose.x,
+        y: height / 2 + 0.002,
+        z: pose.y,
+      },
+      true,
+    );
+    body.setRotation(yawRotation(pose.yaw), true);
+    body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+    body.setAngvel({ x: 0, y: 0, z: 0 }, true);
   }
 
   private createDohyoSurface(): void {
@@ -228,6 +277,38 @@ export class RapierWorld {
     return body;
   }
 
+  private createPushableObjectBody(): RAPIER.RigidBody {
+    const body = this.world.createRigidBody(
+      RAPIER.RigidBodyDesc.dynamic()
+        .setTranslation(
+          this.initialPushableObjectPose.x,
+          this.pushableObject.height / 2 + 0.002,
+          this.initialPushableObjectPose.y,
+        )
+        .setGravityScale(1)
+        .setLinearDamping(1.4)
+        .setAngularDamping(3)
+        .setAdditionalMass(this.pushableObject.mass)
+        .setCcdEnabled(true)
+        .setSoftCcdPrediction(0.01)
+        .enabledTranslations(true, true, true)
+        .enabledRotations(false, true, false)
+        .setCanSleep(false),
+    );
+
+    const cylinder = RAPIER.ColliderDesc.cylinder(
+      this.pushableObject.height / 2,
+      this.pushableObject.radius,
+    )
+      .setDensity(0)
+      .setFriction(0.2)
+      .setRestitution(0.02)
+      .setContactSkin(0.0002);
+    this.world.createCollider(cylinder, body);
+
+    return body;
+  }
+
   private applyDrive(command: DriveCommand): void {
     const wheelSpeeds = calculateDifferentialWheelSpeeds(
       command.throttle,
@@ -269,6 +350,8 @@ export class RapierWorld {
     const translation = this.robotBody.translation();
     const rotation = this.robotBody.rotation();
     const velocity = this.robotBody.linvel();
+    const objectTranslation = this.pushableObjectBody.translation();
+    const objectRotation = this.pushableObjectBody.rotation();
     return {
       pose: {
         x: translation.x,
@@ -278,6 +361,14 @@ export class RapierWorld {
       verticalPosition: translation.y,
       speed: Math.hypot(velocity.x, velocity.z),
       yawRate: this.robotBody.angvel().y,
+      pushableObject: {
+        pose: {
+          x: objectTranslation.x,
+          y: objectTranslation.z,
+          yaw: yawFromRotation(objectRotation),
+        },
+        verticalPosition: objectTranslation.y,
+      },
     };
   }
 

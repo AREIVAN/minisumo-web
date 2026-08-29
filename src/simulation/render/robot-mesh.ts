@@ -8,9 +8,9 @@ function createWedgeGeometry(spec: RobotSpec): THREE.BufferGeometry {
   const width = spec.width * 0.94;
   const depth = spec.depth * 0.92;
   const bottom = -spec.height * 0.43;
-  const frontTop = -spec.height * 0.08;
+  const frontTop = spec.height * 0.1;
   const rearTop = spec.height * 0.38;
-  const frontZ = -depth / 2 + 0.006;
+  const frontZ = -depth / 2 + 0.018;
   const rearZ = depth / 2 - 0.004;
   const halfWidth = width / 2;
 
@@ -103,35 +103,40 @@ export function createRobotMesh(spec: RobotSpec): THREE.Group {
   group.name = 'practice-robot';
 
   const chassisMaterial = new THREE.MeshStandardMaterial({
-    color: 0x101722,
-    roughness: 0.72,
-    metalness: 0.38,
+    color: 0x090b0e,
+    roughness: 0.68,
+    metalness: 0.42,
   });
   const shellMaterial = new THREE.MeshStandardMaterial({
-    color: 0xd94c38,
-    roughness: 0.4,
-    metalness: 0.62,
+    color: 0x171a1f,
+    roughness: 0.5,
+    metalness: 0.58,
     side: THREE.DoubleSide,
   });
   const trimMaterial = new THREE.MeshStandardMaterial({
-    color: 0xf2a93b,
-    roughness: 0.34,
-    metalness: 0.62,
+    color: 0xc52b2b,
+    roughness: 0.38,
+    metalness: 0.56,
   });
   const wheelMaterial = new THREE.MeshStandardMaterial({
-    color: 0x0b0d12,
-    roughness: 0.88,
-    metalness: 0.08,
+    color: 0xa9282b,
+    roughness: 0.55,
+    metalness: 0.32,
   });
   const hubMaterial = new THREE.MeshStandardMaterial({
-    color: 0x77e5c0,
+    color: 0xd6d9dc,
     roughness: 0.3,
-    metalness: 0.65,
+    metalness: 0.78,
   });
   const bladeMaterial = new THREE.MeshStandardMaterial({
     color: 0xc8d2dc,
     roughness: 0.32,
     metalness: 0.82,
+  });
+  const windowMaterial = new THREE.MeshStandardMaterial({
+    color: 0x020304,
+    roughness: 0.42,
+    metalness: 0.2,
   });
 
   const chassis = new THREE.Mesh(
@@ -151,58 +156,70 @@ export function createRobotMesh(spec: RobotSpec): THREE.Group {
   group.add(shell);
 
   const upperDeck = new THREE.Mesh(
-    new THREE.CylinderGeometry(spec.width * 0.31, spec.width * 0.36, 0.006, 8),
-    trimMaterial,
-  );
-  upperDeck.rotation.y = Math.PI / 8;
-  upperDeck.position.y = spec.height * 0.43;
-  upperDeck.castShadow = true;
-  upperDeck.name = 'top-deck';
-  group.add(upperDeck);
-
-  const sensorCap = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.012, 0.014, 0.006, 8),
+    new THREE.BoxGeometry(spec.width * 0.68, 0.006, spec.depth * 0.42),
     chassisMaterial,
   );
-  sensorCap.rotation.y = Math.PI / 8;
-  sensorCap.position.set(0, spec.height * 0.53, 0.006);
+  upperDeck.position.set(0, spec.height * 0.43, spec.depth * 0.08);
+  upperDeck.castShadow = true;
+  upperDeck.name = 'electronics-cover';
+  group.add(upperDeck);
+
+  const sensorCap = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.005, 0.014), trimMaterial);
+  sensorCap.position.set(-spec.width * 0.2, spec.height * 0.53, spec.depth * 0.08);
   sensorCap.castShadow = true;
-  sensorCap.name = 'sensor-cap';
+  sensorCap.name = 'rear-red-accent';
   group.add(sensorCap);
 
-  const sensorBar = new THREE.Mesh(
-    new THREE.BoxGeometry(0.018, 0.003, 0.004),
-    new THREE.MeshStandardMaterial({ color: 0x77e5c0, roughness: 0.3, metalness: 0.72 }),
-  );
-  sensorBar.position.set(0, spec.height * 0.54, -0.012);
-  sensorBar.name = 'front-sensor';
+  const sensorBar = new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.002, 0.006), windowMaterial);
+  sensorBar.position.set(spec.width * 0.16, spec.height * 0.53, spec.depth * 0.08);
+  sensorBar.name = 'top-switch';
   group.add(sensorBar);
 
-  const frontBlade = new THREE.Mesh(
-    new THREE.BoxGeometry(spec.width * 0.82, 0.005, 0.018),
-    bladeMaterial,
-  );
-  frontBlade.position.set(0, -spec.height * 0.36, -spec.depth * 0.5);
-  frontBlade.rotation.x = -0.12;
-  frontBlade.castShadow = true;
-  frontBlade.name = 'front-blade';
-  group.add(frontBlade);
-
   for (const x of [-0.027, 0.027]) {
-    const headlight = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.005, 0.003), hubMaterial);
-    headlight.position.set(x, spec.height * 0.02, -spec.depth * 0.475);
-    headlight.name = 'front-led';
-    group.add(headlight);
+    const topRail = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.007, 0.035), trimMaterial);
+    topRail.position.set(x, spec.height * 0.43, spec.depth * 0.1);
+    topRail.castShadow = true;
+    topRail.name = 'top-red-rail';
+    group.add(topRail);
   }
 
-  const frontMarker = new THREE.Mesh(
-    new THREE.BoxGeometry(spec.width * 0.58, 0.004, 0.004),
+  const topScrewPositions = [
+    [-0.027, 0.002],
+    [0.027, 0.002],
+    [-0.027, 0.034],
+    [0.027, 0.034],
+  ] as const;
+  for (const [x, z] of topScrewPositions) {
+    const screw = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.0025, 0.0025, 0.0015, 8),
+      hubMaterial,
+    );
+    screw.position.set(x, spec.height * 0.51, z);
+    screw.name = 'top-screw';
+    group.add(screw);
+  }
+
+  const frontBlade = new THREE.Mesh(
+    new THREE.BoxGeometry(spec.width * 0.9, 0.004, spec.depth * 0.32),
     bladeMaterial,
   );
-  frontMarker.position.set(0, spec.height * 0.11, -spec.depth * 0.49);
-  frontMarker.castShadow = true;
-  frontMarker.name = 'front-marker';
-  group.add(frontMarker);
+  // One continuous inclined plate: the ramp is the blade, not a bar mounted
+  // on top of it. The rear edge tucks into the black front shell.
+  frontBlade.position.set(0, -spec.height * 0.27, -spec.depth * 0.56);
+  frontBlade.rotation.x = -0.52;
+  frontBlade.castShadow = true;
+  frontBlade.name = 'front-ramp';
+  group.add(frontBlade);
+
+  for (const x of [-0.023, 0.023]) {
+    const frontWindow = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.012, 0.003), windowMaterial);
+    // The sensor windows belong to the black shell, above the blade. Keeping
+    // them behind the ramp prevents them from reading as bars on the blade.
+    frontWindow.position.set(x, -spec.height * 0.04, -spec.depth * 0.34);
+    frontWindow.rotation.x = -0.55;
+    frontWindow.name = 'front-sensor-window';
+    group.add(frontWindow);
+  }
 
   // Keep the visual tires slightly outside the shell so their silhouette is
   // readable from the isometric camera while remaining close to the physical

@@ -1,6 +1,10 @@
 import './styles.css';
 import { PracticeApplication } from './app/practice-session';
-import { BASE_DOHYO_SPEC, PRACTICE_ROBOT_SPEC } from './domain/index';
+import {
+  BASE_DOHYO_SPEC,
+  PRACTICE_PUSHABLE_OBJECT_SPEC,
+  PRACTICE_ROBOT_SPEC,
+} from './domain/index';
 import { KeyboardInput } from './simulation/input/keyboard-input';
 import { readKeyBindings, type KeyBindings } from './simulation/input/key-bindings';
 import { RapierWorld } from './simulation/physics/rapier-world';
@@ -49,8 +53,18 @@ async function bootstrap(): Promise<void> {
   let input: KeyboardInput | undefined;
 
   try {
-    simulation = await RapierWorld.create(BASE_DOHYO_SPEC, PRACTICE_ROBOT_SPEC);
-    scene = new ThreeScene(simulatorCanvas, BASE_DOHYO_SPEC, PRACTICE_ROBOT_SPEC);
+    simulation = await RapierWorld.create(
+      BASE_DOHYO_SPEC,
+      PRACTICE_ROBOT_SPEC,
+      undefined,
+      PRACTICE_PUSHABLE_OBJECT_SPEC,
+    );
+    scene = new ThreeScene(
+      simulatorCanvas,
+      BASE_DOHYO_SPEC,
+      PRACTICE_ROBOT_SPEC,
+      PRACTICE_PUSHABLE_OBJECT_SPEC,
+    );
     scene.setCamera(CAMERA_MODE.ISOMETRIC);
     input = new KeyboardInput(window, initialKeyBindings);
     application = new PracticeApplication({ hud, simulation, scene, input });

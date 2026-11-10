@@ -3,8 +3,10 @@ import {
   PRACTICE_EVENT,
   PRACTICE_STATE,
   transitionPracticeState,
+  type RoundOutcome,
   type PracticeSessionSnapshot,
   type PracticeState,
+  type PracticeRivalType,
 } from './practice-state';
 
 export class PracticeSession {
@@ -30,8 +32,20 @@ export class PracticeSession {
     this.dispatch({ type: PRACTICE_EVENT.RESUME });
   }
 
-  public markOut(): void {
-    this.dispatch({ type: PRACTICE_EVENT.OUT });
+  public markOut(outcome: RoundOutcome): void {
+    this.dispatch({ type: PRACTICE_EVENT.OUT, outcome });
+  }
+
+  public startNextRound(): void {
+    this.dispatch({ type: PRACTICE_EVENT.NEXT_ROUND });
+  }
+
+  public setRivalType(rivalType: PracticeRivalType): boolean {
+    if (this.status === PRACTICE_STATE.RUNNING || this.status === PRACTICE_STATE.PAUSED) {
+      return false;
+    }
+    this.dispatch({ type: PRACTICE_EVENT.SET_RIVAL_TYPE, rivalType });
+    return true;
   }
 
   public reset(): void {

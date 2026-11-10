@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import {
   PRACTICE_PUSHABLE_OBJECT_SPEC,
+  PRACTICE_RIVAL_TYPE,
   type DohyoSpec,
-  type PushableObjectSpec,
+  type PracticeRivalType,
   type RobotSpec,
 } from '../../domain/index';
 import type { PhysicsSnapshot } from '../physics/rapier-world';
@@ -30,16 +31,12 @@ export class ThreeScene {
   private readonly scene: THREE.Scene;
   private readonly camera: THREE.PerspectiveCamera;
   private readonly robot: THREE.Group;
-  private readonly pushableObject: THREE.Group;
+  private readonly rivalRobot: THREE.Group;
+  private readonly rivalCylinder: THREE.Group;
   private cameraMode: CameraMode = CAMERA_MODE.ISOMETRIC;
   private disposed = false;
 
-  public constructor(
-    canvas: HTMLCanvasElement,
-    dohyo: DohyoSpec,
-    robotSpec: RobotSpec,
-    pushableObjectSpec: PushableObjectSpec = PRACTICE_PUSHABLE_OBJECT_SPEC,
-  ) {
+  public constructor(canvas: HTMLCanvasElement, dohyo: DohyoSpec, robotSpec: RobotSpec) {
     if (!isWebGLAvailable(canvas)) {
       throw new Error(
         'WebGL no está disponible en este navegador. Probá activar la aceleración gráfica o usar otro navegador.',
@@ -68,10 +65,13 @@ export class ThreeScene {
 
     this.addLights();
     this.scene.add(createDohyoMesh(dohyo));
-    this.robot = createRobotMesh(robotSpec);
+    this.robot = createRobotMesh(robotSpec, { name: 'player-robot', accentColor: 0xc52b2b });
     this.scene.add(this.robot);
-    this.pushableObject = createPushableObjectMesh(pushableObjectSpec);
-    this.scene.add(this.pushableObject);
+    this.rivalRobot = createRobotMesh(robotSpec, { name: 'rival-robot', accentColor: 0x27b7c8 });
+    this.scene.add(this.rivalRobot);
+    this.rivalCylinder = createPushableObjectMesh(PRACTICE_PUSHABLE_OBJECT_SPEC);
+    this.rivalCylinder.visible = false;
+    this.scene.add(this.rivalCylinder);
     this.resize();
     window.addEventListener('resize', this.resizeBound);
   }
@@ -82,15 +82,27 @@ export class ThreeScene {
 
   public render(snapshot: PhysicsSnapshot): void {
     this.assertNotDisposed();
+    this.setRivalType(snapshot.rivalType);
     this.robot.position.set(snapshot.pose.x, snapshot.verticalPosition, snapshot.pose.y);
     this.robot.rotation.set(0, snapshot.pose.yaw, 0);
-    this.pushableObject.position.set(
-      snapshot.pushableObject.pose.x,
-      snapshot.pushableObject.verticalPosition,
-      snapshot.pushableObject.pose.y,
+    this.rivalRobot.position.set(
+      snapshot.rival.pose.x,
+      snapshot.rival.verticalPosition,
+      snapshot.rival.pose.y,
     );
-    this.pushableObject.rotation.set(0, snapshot.pushableObject.pose.yaw, 0);
+    this.rivalRobot.rotation.set(0, snapshot.rival.pose.yaw, 0);
+    this.rivalCylinder.position.set(
+      snapshot.rival.pose.x,
+      snapshot.rival.verticalPosition,
+      snapshot.rival.pose.y,
+    );
+    this.rivalCylinder.rotation.set(0, snapshot.rival.pose.yaw, 0);
     this.renderer.render(this.scene, this.camera);
+  }
+
+  public setRivalType(rivalType: PracticeRivalType): void {
+    this.rivalRobot.visible = rivalType === PRACTICE_RIVAL_TYPE.MINISUMO;
+    this.rivalCylinder.visible = rivalType === PRACTICE_RIVAL_TYPE.CYLINDER;
   }
 
   public setCamera(mode: CameraMode): void {

@@ -2,9 +2,12 @@ import {
   BASE_DOHYO_SPEC,
   PRACTICE_ROBOT_SPEC,
   PRACTICE_STATE,
+  PRACTICE_RIVAL_TYPE,
   PracticeSession,
   type DriveCommand,
+  type PracticeRivalType,
 } from '../domain/index';
+import { calculatePursuitCommand } from '../simulation/ai/pursuit-controller';
 import { consumeFixedSteps, FIXED_TIME_STEP, type FixedStepState } from '../simulation/fixed-step';
 import type { InputSource } from '../simulation/input/input-source';
 import {
@@ -62,16 +65,19 @@ export class PracticeApplication {
   }
 
   public mount(): void {
-    this.hud.renderLanding();
+    this.hud.renderLanding(this.session.state.rivalType);
     this.renderCurrentSnapshot();
   }
 
   public start(): void {
     if (this.session.status === PRACTICE_STATE.OUT) {
-      this.reset();
-      return;
+      this.simulation.reset();
+      this.fixedStepState = { accumulator: 0 };
+      this.lastFrameTime = undefined;
+      this.session.startNextRound();
+    } else {
+      this.session.start();
     }
-    this.session.start();
     this.controlsOpen = true;
     this.hud.renderPractice(this.hudSnapshot());
     this.hud.setControlsOpen(true);
@@ -106,7 +112,14 @@ export class PracticeApplication {
     this.session.reset();
     this.session.acknowledgeReset();
     this.simulation.reset();
-    this.hud.renderLanding();
+    this.hud.renderLanding(this.session.state.rivalType);
+    this.renderCurrentSnapshot();
+  }
+
+  public setRivalType(rivalType: PracticeRivalType): void {
+    if (!this.session.setRivalType(rivalType)) return;
+    this.simulation.setRivalType(rivalType);
+    this.scene.setRivalType(rivalType);
     this.renderCurrentSnapshot();
   }
 
@@ -180,10 +193,16 @@ export class PracticeApplication {
 
   private stepPhysics(steps: number, command: DriveCommand): void {
     for (let step = 0; step < steps; step += 1) {
-      this.simulation.step(command);
+      const beforeStep = this.simulation.snapshot;
+      const rivalCommand =
+        beforeStep.rivalType === PRACTICE_RIVAL_TYPE.MINISUMO
+          ? calculatePursuitCommand(beforeStep.rival.pose, beforeStep.pose)
+          : { throttle: 0, steering: 0, reset: false };
+      this.simulation.step(command, rivalCommand);
       this.session.advance(FIXED_TIME_STEP);
-      if (this.simulation.isBoundaryOut()) {
-        this.session.markOut();
+      const outcome = this.simulation.getRoundOutcome();
+      if (outcome) {
+        this.session.markOut(outcome);
         this.simulation.halt();
         break;
       }
@@ -191,7 +210,8 @@ export class PracticeApplication {
   }
 
   private renderCurrentSnapshot(): void {
-    this.scene.render(this.simulation.snapshot);
+    const snapshot = this.simulation.snapshot;
+    this.scene.render(snapshot);
     this.hud.update(this.hudSnapshot());
   }
 
@@ -201,7 +221,11 @@ export class PracticeApplication {
       status: this.session.status,
       elapsedSeconds: this.session.state.elapsedSeconds,
       speed: snapshot.speed,
+      playerScore: this.session.state.playerScore,
+      rivalScore: this.session.state.rivalScore,
+      lastOutcome: this.session.state.lastOutcome,
       camera: this.scene.currentCamera ?? CAMERA_MODE.ISOMETRIC,
+      rivalType: this.session.state.rivalType,
     };
   }
 }

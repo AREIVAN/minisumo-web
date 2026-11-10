@@ -2,7 +2,7 @@
 
 ## Resultado esperado
 
-Una web de práctica Mini Sumo, inspirada en la claridad de Arena Tapout pero construida sobre un dohyo circular reglamentario y una física adecuada para robots de hasta 10 × 10 cm.
+Una web de combate Mini Sumo, inspirada en la claridad de Arena Tapout pero construida sobre un dohyo circular reglamentario y una física adecuada para robots de hasta 10 × 10 cm.
 
 ## Fase 0 — Base del proyecto
 
@@ -39,25 +39,25 @@ Una web de práctica Mini Sumo, inspirada en la claridad de Arena Tapout pero co
 - [x] Implementar tracción diferencial.
 - [x] Usar unidades SI y paso fijo.
 - [x] Agregar aceleración, velocidad máxima, fricción y giro.
-- [x] Detectar salida por huella, caída o contacto exterior.
+- [x] Detectar la salida completa de la huella contra el límite exterior.
 
 **Aceptación:** el robot puede manejarse y no puede “pegarse” a una pared invisible en el borde.
 
-## Fase 3 — Controles y práctica
+## Fase 3 — Controles y combate manual vs. IA
 
-**Estado:** completada para el alcance del MVP manual.
+**Estado:** primera versión completada; la conducción y la respuesta a colisiones todavía requieren calibración.
 
 - [x] Keyboard input con WASD.
 - [x] Pausa y reinicio.
 - [x] Controles en pantalla.
-- [x] Indicador de velocidad y estado.
-- [x] Mensaje claro de “robot fuera del dohyo”.
-- [x] Modo libre manual con pausa, reinicio y salida.
-- [x] Agregar un objetivo cilíndrico dinámico en el centro para practicar empuje por todo el dohyo.
-- [x] Reiniciar y detener de forma consistente el robot y el objetivo.
+- [x] Indicador de velocidad, tiempo y marcador.
+- [x] Reemplazar el objetivo cilíndrico por un segundo robot rival.
+- [x] Rival automático de persecución, limitado a la mitad de la velocidad máxima del jugador.
+- [x] Otorgar un punto solo cuando la huella completa de un robot queda fuera del dohyo.
+- [x] Reiniciar ambos robots para la próxima ronda y conservar el marcador.
 - La ronda oficial de 3 minutos y `localStorage` quedan fuera del primer corte funcional.
 
-**Aceptación:** una persona puede practicar sin leer documentación externa.
+**Aceptación:** una persona puede conducir contra un rival básico y distinguir físicamente ambos equipos.
 
 ## Fase 4 — Perfil de robot
 
@@ -79,10 +79,9 @@ Una web de práctica Mini Sumo, inspirada en la claridad de Arena Tapout pero co
 
 **Aceptación:** los sensores producen lecturas deterministas y pueden grabarse para pruebas.
 
-## Fase 6 — Modo autónomo
+## Fase 6 — IA rival avanzada
 
-- Separar manual y autónomo como dos controladores.
-- Máquina de estados: búsqueda, ataque, evasión del borde y recuperación.
+- Mejorar al rival básico con búsqueda, ataque, evasión del borde y recuperación.
 - Ventana de inicio configurable según torneo.
 - Parada de emergencia y estado READY/RUN/STOP.
 - Reglas de match: rondas, puntos, tiempo y empate.

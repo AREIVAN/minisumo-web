@@ -3,57 +3,64 @@ import {
   BoundaryDetector,
   type DohyoSpec,
   type DriveCommand,
-  type Pose2,
+  NEUTRAL_DRIVE_COMMAND,
   PRACTICE_PUSHABLE_OBJECT_SPEC,
-  type PushableObjectSpec,
+  PRACTICE_RIVAL_TYPE,
+  type Pose2,
+  ROUND_OUTCOME,
   type RobotSpec,
+  type RoundOutcome,
+  type PracticeRivalType,
 } from '../../domain/index';
 import {
   calculateDifferentialWheelSpeeds,
   PRACTICE_DRIVE_CONFIG,
   type DifferentialDriveConfig,
 } from './differential-drive';
+import { createRobotCollisionVertices } from '../robot-geometry';
+import { RIVAL_SPEED_SCALE, RIVAL_TRACTION_SCALE } from '../drive-tuning';
 
 export const DOHYO_SURFACE_THICKNESS = 0.006;
 export const DOHYO_SURFACE_TOP = 0;
-export const INITIAL_ROBOT_EDGE_MARGIN = 0.01;
-export const PUSHABLE_OBJECT_SAFETY_MARGIN = 0.01;
+export const START_LINE_OFFSET = 0.05;
+const ROBOT_WHEEL_RADIUS = 0.016;
+const ROBOT_WHEEL_VERTICAL_OFFSET = -0.009;
+const ROBOT_CENTER_OF_MASS_HEIGHT_RATIO = 0.3;
+const DRIVE_RESPONSE = 30;
+const LATERAL_RESPONSE = 14;
+const VIRTUAL_TIRE_FRICTION = 0.8;
+const MAX_YAW_ACCELERATION = 26;
+const MAX_COLLISION_SPEED_SCALE = 1.5;
+const MAX_COLLISION_YAW_RATE_DEVIATION_SCALE = 0.25;
 
 export function calculateInitialRobotPose(dohyo: DohyoSpec, robot: RobotSpec): Pose2 {
-  const footprintRadius = Math.hypot(robot.width / 2, robot.depth / 2);
-  const centerRadius = dohyo.innerRadius - footprintRadius - INITIAL_ROBOT_EDGE_MARGIN;
-  if (centerRadius <= 0) {
-    throw new RangeError('dohyo is too small for a safe edge starting pose.');
+  const startCenterOffset = START_LINE_OFFSET + robot.depth / 2;
+  const rearCornerOffset = START_LINE_OFFSET + robot.depth;
+  const footprintRadius = Math.hypot(robot.width / 2, rearCornerOffset);
+  if (footprintRadius >= dohyo.innerRadius) {
+    throw new RangeError('dohyo is too small for the official starting pose.');
   }
 
-  // Start near the inner edge, facing the center: local -Z points toward
-  // decreasing world-Z at yaw 0.
-  return { x: 0, y: centerRadius, yaw: 0 };
+  // Place the leading edge on the +5 cm starting line. Local -Z points toward
+  // the center at yaw 0; the rival is mirrored onto the opposite line.
+  return { x: 0, y: startCenterOffset, yaw: 0 };
 }
 
-export function calculateInitialPushableObjectPose(
-  dohyo: DohyoSpec,
-  object: PushableObjectSpec,
-): Pose2 {
-  if (dohyo.innerRadius - object.radius - PUSHABLE_OBJECT_SAFETY_MARGIN <= 0) {
-    throw new RangeError('dohyo is too small for a safe pushable object starting pose.');
-  }
-
-  // Start at the center so the robot can push the target through the entire dohyo.
-  return { x: 0, y: 0, yaw: 0 };
+export function calculateInitialRivalPose(dohyo: DohyoSpec, robot: RobotSpec): Pose2 {
+  const playerPose = calculateInitialRobotPose(dohyo, robot);
+  return { x: -playerPose.x, y: -playerPose.y, yaw: Math.PI };
 }
 
-export interface PushableObjectSnapshot {
-  readonly pose: Pose2;
-  readonly verticalPosition: number;
-}
-
-export interface PhysicsSnapshot {
+export interface RobotPhysicsSnapshot {
   readonly pose: Pose2;
   readonly verticalPosition: number;
   readonly speed: number;
   readonly yawRate: number;
-  readonly pushableObject: PushableObjectSnapshot;
+}
+
+export interface PhysicsSnapshot extends RobotPhysicsSnapshot {
+  readonly rival: RobotPhysicsSnapshot;
+  readonly rivalType: PracticeRivalType;
 }
 
 let rapierInitialization: Promise<void> | undefined;
@@ -79,50 +86,55 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
+function moveTowards(current: number, target: number, maxDelta: number): number {
+  return current + clamp(target - current, -maxDelta, maxDelta);
+}
+
 export class RapierWorld {
   public static async create(
     dohyo: DohyoSpec,
     robot: RobotSpec,
     drive: DifferentialDriveConfig = PRACTICE_DRIVE_CONFIG,
-    pushableObject: PushableObjectSpec = PRACTICE_PUSHABLE_OBJECT_SPEC,
   ): Promise<RapierWorld> {
     await initializeRapier();
-    return new RapierWorld(dohyo, robot, drive, pushableObject);
+    return new RapierWorld(dohyo, robot, drive);
   }
 
   private readonly world: RAPIER.World;
+  private readonly dohyoCollider: RAPIER.Collider;
   private readonly robotBody: RAPIER.RigidBody;
-  private readonly pushableObjectBody: RAPIER.RigidBody;
+  private readonly rivalBody: RAPIER.RigidBody;
+  private readonly cylinderBody: RAPIER.RigidBody;
   private readonly boundaryDetector: BoundaryDetector;
   private readonly dohyo: DohyoSpec;
   private readonly robot: RobotSpec;
-  private readonly pushableObject: PushableObjectSpec;
   private readonly drive: DifferentialDriveConfig;
   private readonly initialPose: Pose2;
-  private readonly initialPushableObjectPose: Pose2;
+  private readonly initialRivalPose: Pose2;
+  private readonly initialCylinderPose: Pose2 = { x: 0, y: 0, yaw: 0 };
+  private rivalType: PracticeRivalType = PRACTICE_RIVAL_TYPE.MINISUMO;
   private disposed = false;
 
-  private constructor(
-    dohyo: DohyoSpec,
-    robot: RobotSpec,
-    drive: DifferentialDriveConfig,
-    pushableObject: PushableObjectSpec,
-  ) {
+  private constructor(dohyo: DohyoSpec, robot: RobotSpec, drive: DifferentialDriveConfig) {
     this.dohyo = dohyo;
     this.robot = robot;
-    this.pushableObject = pushableObject;
     this.drive = drive;
     this.initialPose = calculateInitialRobotPose(dohyo, robot);
-    this.initialPushableObjectPose = calculateInitialPushableObjectPose(dohyo, pushableObject);
+    this.initialRivalPose = calculateInitialRivalPose(dohyo, robot);
     this.boundaryDetector = new BoundaryDetector(dohyo, robot);
     this.world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
     this.world.timestep = 1 / 120;
     this.world.maxCcdSubsteps = 2;
     this.world.numSolverIterations = 8;
 
-    this.createDohyoSurface();
-    this.robotBody = this.createRobotBody();
-    this.pushableObjectBody = this.createPushableObjectBody();
+    this.dohyoCollider = this.createDohyoSurface();
+    this.robotBody = this.createRobotBody(this.initialPose);
+    this.rivalBody = this.createRobotBody(this.initialRivalPose);
+    this.cylinderBody = this.createCylinderBody(this.initialCylinderPose);
+    this.haltBody(this.cylinderBody);
+    // Materialize mass properties and broad-phase support before the first
+    // player-controlled frame; collider attachment finalizes them on a step.
+    this.world.step();
   }
 
   public get snapshot(): PhysicsSnapshot {
@@ -130,38 +142,108 @@ export class RapierWorld {
     return this.readSnapshot();
   }
 
-  public step(command: DriveCommand): PhysicsSnapshot {
+  public setRivalType(rivalType: PracticeRivalType): PhysicsSnapshot {
     this.assertNotDisposed();
-    for (const body of [this.robotBody, this.pushableObjectBody]) {
+    if (this.rivalType === rivalType) return this.readSnapshot();
+
+    this.rivalType = rivalType;
+    if (rivalType === PRACTICE_RIVAL_TYPE.MINISUMO) {
+      this.haltBody(this.cylinderBody);
+      this.resetBody(this.rivalBody, this.initialRivalPose, this.robot.height);
+    } else {
+      this.haltBody(this.rivalBody);
+      this.resetCylinderBody();
+    }
+    this.world.propagateModifiedBodyPositionsToColliders();
+    return this.readSnapshot();
+  }
+
+  public step(
+    command: DriveCommand,
+    rivalCommand: DriveCommand = NEUTRAL_DRIVE_COMMAND,
+  ): PhysicsSnapshot {
+    this.assertNotDisposed();
+    const rivalBody = this.activeRivalBody;
+    for (const body of [this.robotBody, rivalBody]) {
       if (body.isValid() && body.isSleeping()) {
         body.wakeUp();
       }
     }
-    this.applyDrive(command);
+    this.applyDrive(this.robotBody, command);
+    if (this.rivalType === PRACTICE_RIVAL_TYPE.MINISUMO) {
+      this.applyDrive(this.rivalBody, rivalCommand);
+    }
     this.world.step();
+    this.limitCollisionVelocity(this.robotBody, command);
+    if (this.rivalType === PRACTICE_RIVAL_TYPE.MINISUMO) {
+      this.limitCollisionVelocity(this.rivalBody, rivalCommand);
+    } else {
+      this.updateCylinderSupport();
+    }
     return this.readSnapshot();
   }
 
-  public isBoundaryOut(): boolean {
+  public getRoundOutcome(): RoundOutcome | null {
     this.assertNotDisposed();
     const snapshot = this.readSnapshot();
-    return this.boundaryDetector.isOut(snapshot.pose) || snapshot.verticalPosition < -0.06;
+    const playerOut = this.boundaryDetector.isOut(snapshot.pose);
+    const rivalOut =
+      this.rivalType === PRACTICE_RIVAL_TYPE.MINISUMO
+        ? this.boundaryDetector.isOut(snapshot.rival.pose)
+        : this.isCylinderFullyOut(snapshot.rival.pose);
+
+    if (playerOut && rivalOut) return ROUND_OUTCOME.BOTH_SCORE;
+    if (playerOut) return ROUND_OUTCOME.RIVAL_SCORES;
+    if (rivalOut) return ROUND_OUTCOME.PLAYER_SCORES;
+    return null;
+  }
+
+  /** Returns whether Rapier currently has solver contacts between the robots. */
+  public hasRobotContact(): boolean {
+    this.assertNotDisposed();
+    let hasContact = false;
+    const playerCollider = this.robotBody.collider(0);
+    const rivalCollider = this.rivalBody.collider(0);
+
+    this.world.contactPair(playerCollider, rivalCollider, (manifold) => {
+      if (manifold.numSolverContacts() > 0) {
+        hasContact = true;
+      }
+    });
+
+    return hasContact;
+  }
+
+  /** Returns whether Rapier currently has solver contacts with the selected rival. */
+  public hasRivalContact(): boolean {
+    this.assertNotDisposed();
+    let hasContact = false;
+    const rivalCollider = this.activeRivalBody.collider(0);
+
+    this.world.contactPair(this.robotBody.collider(0), rivalCollider, (manifold) => {
+      if (manifold.numSolverContacts() > 0) hasContact = true;
+    });
+
+    return hasContact;
   }
 
   public halt(): void {
     this.assertNotDisposed();
     this.haltBody(this.robotBody);
-    this.haltBody(this.pushableObjectBody);
+    this.haltBody(this.rivalBody);
+    this.haltBody(this.cylinderBody);
   }
 
   public reset(): PhysicsSnapshot {
     this.assertNotDisposed();
     this.resetBody(this.robotBody, this.initialPose, this.robot.height);
-    this.resetBody(
-      this.pushableObjectBody,
-      this.initialPushableObjectPose,
-      this.pushableObject.height,
-    );
+    if (this.rivalType === PRACTICE_RIVAL_TYPE.MINISUMO) {
+      this.haltBody(this.cylinderBody);
+      this.resetBody(this.rivalBody, this.initialRivalPose, this.robot.height);
+    } else {
+      this.haltBody(this.rivalBody);
+      this.resetCylinderBody();
+    }
     this.world.propagateModifiedBodyPositionsToColliders();
     return this.readSnapshot();
   }
@@ -183,6 +265,7 @@ export class RapierWorld {
 
   private resetBody(body: RAPIER.RigidBody, pose: Pose2, height: number): void {
     body.setEnabled(true);
+    body.setEnabledTranslations(true, false, true, true);
     body.resetForces(true);
     body.resetTorques(true);
     body.setTranslation(
@@ -194,11 +277,64 @@ export class RapierWorld {
       true,
     );
     body.setRotation(yawRotation(pose.yaw), true);
+    body.setGravityScale(0, true);
     body.setLinvel({ x: 0, y: 0, z: 0 }, true);
     body.setAngvel({ x: 0, y: 0, z: 0 }, true);
   }
 
-  private createDohyoSurface(): void {
+  private get activeRivalBody(): RAPIER.RigidBody {
+    return this.rivalType === PRACTICE_RIVAL_TYPE.MINISUMO ? this.rivalBody : this.cylinderBody;
+  }
+
+  private resetCylinderBody(): void {
+    const body = this.cylinderBody;
+    body.setEnabled(true);
+    body.setEnabledTranslations(true, false, true, true);
+    body.setEnabledRotations(false, true, false, true);
+    body.resetForces(true);
+    body.resetTorques(true);
+    body.setTranslation(
+      {
+        x: this.initialCylinderPose.x,
+        y: PRACTICE_PUSHABLE_OBJECT_SPEC.height / 2,
+        z: this.initialCylinderPose.y,
+      },
+      true,
+    );
+    body.setRotation(yawRotation(this.initialCylinderPose.yaw), true);
+    body.setGravityScale(0, true);
+    body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+    body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+  }
+
+  private isCylinderFullyOut(pose: Pose2): boolean {
+    return (
+      Math.hypot(pose.x, pose.y) >
+      this.dohyo.outerRadius + PRACTICE_PUSHABLE_OBJECT_SPEC.radius
+    );
+  }
+
+  private updateCylinderSupport(): void {
+    const body = this.cylinderBody;
+    const translation = body.translation();
+    const velocity = body.linvel();
+    const pose = { x: translation.x, y: translation.z, yaw: yawFromRotation(body.rotation()) };
+    if (this.isCylinderFullyOut(pose)) {
+      body.setEnabledTranslations(true, true, true, true);
+      body.setGravityScale(1, true);
+      return;
+    }
+
+    body.setEnabledTranslations(true, false, true, true);
+    const groundHeight = PRACTICE_PUSHABLE_OBJECT_SPEC.height / 2;
+    if (Math.abs(translation.y - groundHeight) > 0.0001) {
+      body.setTranslation({ x: translation.x, y: groundHeight, z: translation.z }, true);
+    }
+    body.setLinvel({ x: velocity.x, y: 0, z: velocity.z }, true);
+    body.setGravityScale(0, true);
+  }
+
+  private createDohyoSurface(): RAPIER.Collider {
     const segments = 96;
     const vertices = new Float32Array((segments + 1) * 3);
     const indices = new Uint32Array(segments * 3);
@@ -221,137 +357,227 @@ export class RapierWorld {
     const surfaceBody = this.world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
     const surfaceCollider = RAPIER.ColliderDesc.trimesh(vertices, indices)
       .setDensity(0)
-      .setFriction(1.25)
-      .setRestitution(0);
+      // Traction is supplied by the virtual wheel controller below. Nonzero
+      // floor friction would create a second, conflicting drive model.
+      .setFriction(0)
+      .setRestitution(0)
+      // The disk is queried for support, but physical contact across the
+      // triangle fan introduces edge impulses into the robot's chassis.
+      .setSensor(true);
 
     // This is a finite floor only. There are deliberately no perimeter faces:
     // the boundary rule below, not a collider, decides when the robot is out.
-    this.world.createCollider(surfaceCollider, surfaceBody);
+    return this.world.createCollider(surfaceCollider, surfaceBody);
   }
 
-  private createRobotBody(): RAPIER.RigidBody {
+  private createRobotBody(pose: Pose2): RAPIER.RigidBody {
+    const mass = this.robot.mass;
+    const inertia: RAPIER.Vector = {
+      x: (mass * (this.robot.height ** 2 + this.robot.depth ** 2)) / 12,
+      y: (mass * (this.robot.width ** 2 + this.robot.depth ** 2)) / 12,
+      z: (mass * (this.robot.width ** 2 + this.robot.height ** 2)) / 12,
+    };
     const body = this.world.createRigidBody(
       RAPIER.RigidBodyDesc.dynamic()
-        .setTranslation(this.initialPose.x, this.robot.height / 2 + 0.002, this.initialPose.y)
-        .setGravityScale(1)
+        .setTranslation(pose.x, this.robot.height / 2 + 0.002, pose.y)
+        .setRotation(yawRotation(pose.yaw))
+        .setGravityScale(0)
         .setLinearDamping(1.6)
-        .setAngularDamping(3.2)
-        .setAdditionalMass(this.robot.mass)
+        .setAngularDamping(0.6)
         .setCcdEnabled(true)
         .setSoftCcdPrediction(0.01)
-        .enabledTranslations(true, true, true)
+        // Keep the chassis in the dohyo plane; only unlock vertical motion
+        // after it has fully lost floor support.
+        .enabledTranslations(true, false, true)
         .enabledRotations(false, true, false)
         .setCanSleep(false),
     );
 
-    const chassis = RAPIER.ColliderDesc.cuboid(
-      this.robot.width / 2,
-      this.robot.height / 2,
-      this.robot.depth / 2,
-    )
-      .setDensity(0)
-      .setFriction(0.35)
-      .setRestitution(0)
-      .setContactSkin(0.0004);
-    this.world.createCollider(chassis, body);
-
-    const wheelRadius = 0.016;
-    const wheelHalfWidth = 0.006;
-    const wheelRotation: RAPIER.Rotation = {
-      x: 0,
-      y: 0,
-      z: Math.sin(Math.PI / 4),
-      w: Math.cos(Math.PI / 4),
-    };
-    for (const side of [-1, 1]) {
-      const wheel = RAPIER.ColliderDesc.cylinder(wheelHalfWidth, wheelRadius)
-        .setTranslation(side * (this.drive.trackWidth / 2), -0.009, 0)
-        .setRotation(wheelRotation)
-        .setDensity(0)
-        .setFriction(0.8)
-        .setRestitution(0)
-        .setContactSkin(0.0002);
-      this.world.createCollider(wheel, body);
+    const chassis = RAPIER.ColliderDesc.convexHull(createRobotCollisionVertices(this.robot));
+    if (!chassis) {
+      throw new Error('No se pudo construir la geometría física del robot.');
     }
+    chassis.setDensity(0).setFriction(0.35).setRestitution(0).setContactSkin(0.0004);
+    this.world.createCollider(chassis, body);
+    // Collider creation recomputes body mass from collider densities, so set
+    // the explicit robot mass and inertia only after all colliders are attached.
+    body.setAdditionalMassProperties(
+      mass,
+      { x: 0, y: -this.robot.height * ROBOT_CENTER_OF_MASS_HEIGHT_RATIO, z: 0 },
+      inertia,
+      { x: 0, y: 0, z: 0, w: 1 },
+      true,
+    );
 
     return body;
   }
 
-  private createPushableObjectBody(): RAPIER.RigidBody {
+  private createCylinderBody(pose: Pose2): RAPIER.RigidBody {
+    const spec = PRACTICE_PUSHABLE_OBJECT_SPEC;
     const body = this.world.createRigidBody(
       RAPIER.RigidBodyDesc.dynamic()
-        .setTranslation(
-          this.initialPushableObjectPose.x,
-          this.pushableObject.height / 2 + 0.002,
-          this.initialPushableObjectPose.y,
-        )
-        .setGravityScale(1)
-        .setLinearDamping(1.4)
-        .setAngularDamping(3)
-        .setAdditionalMass(this.pushableObject.mass)
+        .setTranslation(pose.x, spec.height / 2, pose.y)
+        .setRotation(yawRotation(pose.yaw))
+        .setGravityScale(0)
+        .setLinearDamping(1.2)
+        .setAngularDamping(0.8)
         .setCcdEnabled(true)
-        .setSoftCcdPrediction(0.01)
-        .enabledTranslations(true, true, true)
+        .enabledTranslations(true, false, true)
         .enabledRotations(false, true, false)
         .setCanSleep(false),
     );
-
-    const cylinder = RAPIER.ColliderDesc.cylinder(
-      this.pushableObject.height / 2,
-      this.pushableObject.radius,
-    )
+    const collider = RAPIER.ColliderDesc.cylinder(spec.height / 2, spec.radius)
       .setDensity(0)
       .setFriction(0.2)
       .setRestitution(0.02)
       .setContactSkin(0.0002);
-    this.world.createCollider(cylinder, body);
-
+    this.world.createCollider(collider, body);
+    body.setAdditionalMass(spec.mass, true);
     return body;
   }
 
-  private applyDrive(command: DriveCommand): void {
+  private applyDrive(body: RAPIER.RigidBody, command: DriveCommand): void {
+    if (!body.isEnabled()) return;
+
     const wheelSpeeds = calculateDifferentialWheelSpeeds(
       command.throttle,
       command.steering,
       this.drive,
     );
-    const rotation = this.robotBody.rotation();
+    const rotation = body.rotation();
     const yaw = yawFromRotation(rotation);
     // The robot's front is local -Z. Rapier/Three yaw therefore maps that
     // direction to {-sin(yaw), -cos(yaw)} in the X/Z plane.
     const forward = { x: -Math.sin(yaw), z: -Math.cos(yaw) };
     const right = { x: Math.cos(yaw), z: -Math.sin(yaw) };
-    const velocity = this.robotBody.linvel();
+    const translation = body.translation();
+    const velocity = body.linvel();
     const forwardVelocity = velocity.x * forward.x + velocity.z * forward.z;
     const lateralVelocity = velocity.x * right.x + velocity.z * right.z;
+    const mass = body.mass();
+    let groundedWheels = 0;
 
-    // The wheel pair determines a target forward speed and yaw rate. A bounded
-    // force/torque controller gets there smoothly and brakes when the keys lift.
-    const forwardAcceleration = clamp((wheelSpeeds.forwardSpeed - forwardVelocity) * 30, -10, 10);
-    const lateralAcceleration = clamp(-lateralVelocity * 14, -6, 6);
-    const mass = this.robotBody.mass();
-    this.robotBody.addForce(
-      {
-        x: (forward.x * forwardAcceleration + right.x * lateralAcceleration) * mass,
-        y: 0,
-        z: (forward.z * forwardAcceleration + right.z * lateralAcceleration) * mass,
-      },
-      true,
+    for (const side of [-1, 1] as const) {
+      const lateralOffset = side * (this.drive.trackWidth / 2);
+      const wheelCenter = {
+        x: translation.x + right.x * lateralOffset,
+        y: translation.y + ROBOT_WHEEL_VERTICAL_OFFSET,
+        z: translation.z + right.z * lateralOffset,
+      };
+      const support = this.world.castRay(
+        new RAPIER.Ray(wheelCenter, { x: 0, y: -1, z: 0 }),
+        ROBOT_WHEEL_RADIUS + 0.004,
+        true,
+        undefined,
+        undefined,
+        undefined,
+        body,
+      );
+      const supported = Boolean(support && support.collider.handle === this.dohyoCollider.handle);
+      if (!supported) continue;
+
+      groundedWheels += 1;
+    }
+
+    if (groundedWheels > 0) {
+      // Model the two motors as a bounded velocity controller instead of
+      // physical cylinders. Continuous force is important here: setting
+      // velocity alone makes the solver cancel all motion during a collision.
+      const supportScale = groundedWheels / 2;
+      const targetForwardSpeed = (wheelSpeeds.left + wheelSpeeds.right) / 2;
+      const maxTractionForce = mass * 9.81 * VIRTUAL_TIRE_FRICTION * supportScale;
+      const motorTractionScale = body === this.rivalBody ? RIVAL_TRACTION_SCALE : 1;
+      const longitudinalForce = clamp(
+        (targetForwardSpeed - forwardVelocity) * DRIVE_RESPONSE * mass,
+        -maxTractionForce * motorTractionScale,
+        maxTractionForce * motorTractionScale,
+      );
+      const lateralForce = clamp(
+        -lateralVelocity * LATERAL_RESPONSE * mass,
+        -maxTractionForce,
+        maxTractionForce,
+      );
+      body.setEnabledTranslations(true, false, true, true);
+      const groundHeight = this.robot.height / 2 + 0.002;
+      if (Math.abs(translation.y - groundHeight) > 0.0001) {
+        body.setTranslation({ x: translation.x, y: groundHeight, z: translation.z }, true);
+      }
+      body.setLinvel({ x: velocity.x, y: 0, z: velocity.z }, true);
+      body.addForce(
+        {
+          x: forward.x * longitudinalForce + right.x * lateralForce,
+          y: 0,
+          z: forward.z * longitudinalForce + right.z * lateralForce,
+        },
+        true,
+      );
+      body.setGravityScale(0, true);
+      const nextYawRate = moveTowards(
+        body.angvel().y,
+        wheelSpeeds.yawRate,
+        MAX_YAW_ACCELERATION * this.world.timestep * supportScale,
+      );
+      body.setAngvel({ x: 0, y: nextYawRate, z: 0 }, true);
+    } else if (!this.boundaryDetector.isOut({ x: translation.x, y: translation.z, yaw })) {
+      // A wheel can lose edge support before the full chassis leaves. Keep the
+      // body in the dohyo plane until its complete footprint has exited; this
+      // prevents an opponent's ramp from launching the still-scoring robot.
+      body.setEnabledTranslations(true, false, true, true);
+      const groundHeight = this.robot.height / 2 + 0.002;
+      if (Math.abs(translation.y - groundHeight) > 0.0001) {
+        body.setTranslation({ x: translation.x, y: groundHeight, z: translation.z }, true);
+      }
+      body.setLinvel({ x: velocity.x, y: 0, z: velocity.z }, true);
+      body.setGravityScale(0, true);
+    } else {
+      body.setEnabledTranslations(true, true, true, true);
+      body.setGravityScale(1, true);
+    }
+  }
+
+  private limitCollisionVelocity(body: RAPIER.RigidBody, command: DriveCommand): void {
+    if (!body.isEnabled()) return;
+
+    const velocity = body.linvel();
+    const speed = Math.hypot(velocity.x, velocity.z);
+    const speedScale = body === this.rivalBody ? RIVAL_SPEED_SCALE : 1;
+    const maxSpeed = this.drive.maxWheelSpeed * speedScale * MAX_COLLISION_SPEED_SCALE;
+    if (speed > maxSpeed) {
+      const scale = maxSpeed / speed;
+      body.setLinvel({ x: velocity.x * scale, y: velocity.y, z: velocity.z * scale }, true);
+    }
+
+    const commandedYawRate = calculateDifferentialWheelSpeeds(
+      command.throttle,
+      command.steering,
+      this.drive,
+    ).yawRate;
+    const maxYawRate = Math.min(
+      this.drive.maxYawRate * speedScale,
+      Math.abs(commandedYawRate) +
+        this.drive.maxYawRate * speedScale * MAX_COLLISION_YAW_RATE_DEVIATION_SCALE,
     );
-
-    const angularVelocity = this.robotBody.angvel().y;
-    // calculateDifferentialWheelSpeeds already converts logical right (+1)
-    // into physical negative yaw for this local -Z orientation.
-    const yawTorque = clamp((wheelSpeeds.yawRate - angularVelocity) * 0.005, -0.035, 0.035);
-    this.robotBody.addTorque({ x: 0, y: yawTorque, z: 0 }, true);
+    const yawRate = body.angvel().y;
+    if (Math.abs(yawRate) > maxYawRate) {
+      body.setAngvel({ x: 0, y: Math.sign(yawRate) * maxYawRate, z: 0 }, true);
+    }
   }
 
   private readSnapshot(): PhysicsSnapshot {
-    const translation = this.robotBody.translation();
-    const rotation = this.robotBody.rotation();
-    const velocity = this.robotBody.linvel();
-    const objectTranslation = this.pushableObjectBody.translation();
-    const objectRotation = this.pushableObjectBody.rotation();
+    const player = this.readRobotSnapshot(this.robotBody);
+    const rival = this.readRobotSnapshot(this.activeRivalBody);
+    return {
+      ...player,
+      rival,
+      rivalType: this.rivalType,
+    };
+  }
+
+  private readRobotSnapshot(body: RAPIER.RigidBody): RobotPhysicsSnapshot {
+    const translation = body.translation();
+    const rotation = body.rotation();
+    const velocity = body.linvel();
+
     return {
       pose: {
         x: translation.x,
@@ -360,15 +586,7 @@ export class RapierWorld {
       },
       verticalPosition: translation.y,
       speed: Math.hypot(velocity.x, velocity.z),
-      yawRate: this.robotBody.angvel().y,
-      pushableObject: {
-        pose: {
-          x: objectTranslation.x,
-          y: objectTranslation.z,
-          yaw: yawFromRotation(objectRotation),
-        },
-        verticalPosition: objectTranslation.y,
-      },
+      yawRate: body.angvel().y,
     };
   }
 

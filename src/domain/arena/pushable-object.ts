@@ -15,14 +15,10 @@ export function createPushableObjectSpec(input: PushableObjectSpec): PushableObj
   assertPositiveFinite(input.height, 'height');
   assertPositiveFinite(input.mass, 'mass');
 
-  return {
-    radius: input.radius,
-    height: input.height,
-    mass: input.mass,
-  };
+  return { radius: input.radius, height: input.height, mass: input.mass };
 }
 
-/** Small training target placed opposite the robot and simulated as a dynamic body. */
+/** Compact, physical cylinder target used by the practice arena. */
 export const PRACTICE_PUSHABLE_OBJECT_SPEC = createPushableObjectSpec({
   radius: 0.035,
   height: 0.04,

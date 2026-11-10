@@ -1,46 +1,20 @@
 import * as THREE from 'three';
 import type { RobotSpec } from '../../domain/index';
+import {
+  createRobotWedgeVertices,
+  FRONT_BLADE_ANGLE,
+  FRONT_BLADE_CENTER_Z_RATIO,
+} from '../robot-geometry';
 
 const WHEEL_RADIUS = 0.016;
 const WHEEL_WIDTH = 0.012;
 
+export interface RobotMeshOptions {
+  readonly name?: string;
+  readonly accentColor?: THREE.ColorRepresentation;
+}
+
 function createWedgeGeometry(spec: RobotSpec): THREE.BufferGeometry {
-  const width = spec.width * 0.94;
-  const depth = spec.depth * 0.92;
-  const bottom = -spec.height * 0.43;
-  const frontTop = spec.height * 0.1;
-  const rearTop = spec.height * 0.38;
-  const frontZ = -depth / 2 + 0.018;
-  const rearZ = depth / 2 - 0.004;
-  const halfWidth = width / 2;
-
-  const vertices = new Float32Array([
-    -halfWidth,
-    bottom,
-    -depth / 2,
-    halfWidth,
-    bottom,
-    -depth / 2,
-    halfWidth,
-    bottom,
-    depth / 2,
-    -halfWidth,
-    bottom,
-    depth / 2,
-    -halfWidth,
-    frontTop,
-    frontZ,
-    halfWidth,
-    frontTop,
-    frontZ,
-    halfWidth,
-    rearTop,
-    rearZ,
-    -halfWidth,
-    rearTop,
-    rearZ,
-  ]);
-
   const indices = [
     0,
     3,
@@ -81,7 +55,7 @@ function createWedgeGeometry(spec: RobotSpec): THREE.BufferGeometry {
   ];
 
   const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+  geometry.setAttribute('position', new THREE.BufferAttribute(createRobotWedgeVertices(spec), 3));
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
   return geometry;
@@ -98,9 +72,10 @@ function createWheel(material: THREE.Material, x: number): THREE.Mesh {
   return wheel;
 }
 
-export function createRobotMesh(spec: RobotSpec): THREE.Group {
+export function createRobotMesh(spec: RobotSpec, options: RobotMeshOptions = {}): THREE.Group {
   const group = new THREE.Group();
-  group.name = 'practice-robot';
+  group.name = options.name ?? 'practice-robot';
+  const accentColor = options.accentColor ?? 0xc52b2b;
 
   const chassisMaterial = new THREE.MeshStandardMaterial({
     color: 0x090b0e,
@@ -114,12 +89,12 @@ export function createRobotMesh(spec: RobotSpec): THREE.Group {
     side: THREE.DoubleSide,
   });
   const trimMaterial = new THREE.MeshStandardMaterial({
-    color: 0xc52b2b,
+    color: accentColor,
     roughness: 0.38,
     metalness: 0.56,
   });
   const wheelMaterial = new THREE.MeshStandardMaterial({
-    color: 0xa9282b,
+    color: accentColor,
     roughness: 0.55,
     metalness: 0.32,
   });
@@ -205,8 +180,8 @@ export function createRobotMesh(spec: RobotSpec): THREE.Group {
   );
   // One continuous inclined plate: the ramp is the blade, not a bar mounted
   // on top of it. The rear edge tucks into the black front shell.
-  frontBlade.position.set(0, -spec.height * 0.27, -spec.depth * 0.56);
-  frontBlade.rotation.x = -0.52;
+  frontBlade.position.set(0, -spec.height * 0.27, spec.depth * FRONT_BLADE_CENTER_Z_RATIO);
+  frontBlade.rotation.x = FRONT_BLADE_ANGLE;
   frontBlade.castShadow = true;
   frontBlade.name = 'front-ramp';
   group.add(frontBlade);
@@ -221,10 +196,9 @@ export function createRobotMesh(spec: RobotSpec): THREE.Group {
     group.add(frontWindow);
   }
 
-  // Keep the visual tires slightly outside the shell so their silhouette is
-  // readable from the isometric camera while remaining close to the physical
-  // track width used by Rapier.
-  const wheelX = spec.width * 0.48;
+  // Keep the tires and hubs within the declared width (including their
+  // thickness), while leaving a small edge visible outside the wedge shell.
+  const wheelX = spec.width * 0.41;
   for (const x of [-wheelX, wheelX]) {
     group.add(createWheel(wheelMaterial, x));
     const hub = new THREE.Mesh(

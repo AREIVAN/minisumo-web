@@ -14,7 +14,9 @@ El simulador usará un perfil reglamentario explícito, en lugar de esconder las
 | Peso máximo de competencia                                 |      500 g |
 | Duración de ronda de referencia                            |      3 min |
 
-La línea blanca cuenta como área válida. La salida se detectará cuando cualquier parte relevante de la huella del robot toque el exterior del radio de 0,385 m, no solamente cuando el centro del robot lo cruce.
+El perfil base coloca los robots enfrentados, con el borde frontal alineado a las marcas de inicio situadas a 5 cm del centro. La geometría visible y la de colisión deben quedar dentro del rectángulo máximo declarado; la detección de salida conserva ese rectángulo como huella legal conservadora.
+
+Para este simulador, la salida se detecta cuando toda la huella rectangular del robot queda fuera del radio exterior de 0,385 m. Que una esquina o parte del chasis cruce la línea todavía no termina la ronda. Si sale el rival, suma el jugador; si sale el jugador, suma el rival. Si ambos salen en el mismo paso físico, se suma un punto a cada uno.
 
 ## Lo que varía entre torneos
 
@@ -26,17 +28,17 @@ No existe un único reglamento universal idéntico en todos los torneos. El diá
 
 Por eso `DohyoSpec` debe ser configurable, aunque el MVP solo exponga el perfil base.
 
-## Modo práctica vs. competencia
+## Modo manual vs. competencia oficial
 
-El usuario podrá controlar el robot manualmente en el MVP. Eso sirve para:
+El jugador controla un robot manualmente y se enfrenta a un rival de IA básica, limitado a la mitad de su velocidad máxima. Eso sirve para:
 
 - probar tracción y giro;
 - comparar velocidades y aceleración;
 - estudiar cuánto margen queda hasta la tawara;
 - validar una geometría o un modelo visual;
-- preparar luego el comportamiento autónomo.
+- probar empuje y reacción ante un rival móvil.
 
-No debe etiquetarse como “combate oficial”: los reglamentos competitivos exigen autonomía durante la ronda.
+No debe etiquetarse como “combate oficial”: los reglamentos competitivos suelen exigir autonomía durante la ronda y pueden aplicar criterios de salida distintos.
 
 ## Fuentes consultadas
 

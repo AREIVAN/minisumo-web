@@ -1,8 +1,8 @@
 # Mini Sumo Arena
 
-Simulador web de práctica para robots Mini Sumo. Conducí un robot de 10 cm dentro de un dohyo circular reglamentario y observá cómo responde una física basada en unidades reales, tracción diferencial y detección explícita del borde.
+Simulador web de combate Mini Sumo. Conducí un robot de 10 cm contra un rival automático dentro de un dohyo circular, con física en unidades reales y puntaje por salida completa del dohyo.
 
-> **Estado:** MVP funcional de práctica manual. La competencia autónoma, los sensores virtuales y los perfiles configurables forman parte de las próximas fases.
+> **Estado:** prototipo 1v1 manual contra una IA de persecución básica. La IA y el modelo de tracción todavía necesitan calibración.
 
 > https://minisumo.areivan.com/
 > imagen de referencia:
@@ -13,14 +13,15 @@ Simulador web de práctica para robots Mini Sumo. Conducí un robot de 10 cm den
 - Escena 3D procedural, sin modelos externos, construida con Three.js.
 - Dohyo circular de 77 cm de diámetro con tawara visible de 2,5 cm.
 - Física Rapier en metros y kilogramos, con paso fijo de 1/120 s.
-- Robot de práctica de 10 × 10 cm con tracción diferencial.
-- Objetivo cilíndrico dinámico de práctica, ubicado en el centro y empujable por el robot por todo el dohyo.
-- Detección de salida basada en la huella completa del robot, incluso con rotación.
+- Rival elegible para la práctica: un robot Mini Sumo controlado por una IA básica o un cilindro físico empujable; se selecciona antes de iniciar o entre rondas.
+- En modo 1v1, el rival automático se limita a la mitad de la velocidad máxima del jugador.
+- Puntaje por rondas: si el rival sale completamente, sumás un punto; si salís vos, suma el rival.
+- Detección geométrica de salida que espera a que toda la huella rectangular del robot quede fuera del radio exterior, incluso con rotación.
 - Cámaras isométrica y superior.
-- HUD de práctica con estado, tiempo, velocidad, pausa, reinicio y controles.
+- HUD de combate con marcador, tiempo, velocidad, pausa, reinicio y controles.
 - Remapeo persistente de las cuatro teclas de movimiento desde el panel de controles.
-- Reinicio del robot cerca del borde interior del dohyo, orientado hacia el centro para practicar la salida.
-- Reinicio conjunto del robot y del objetivo cilíndrico a sus posiciones iniciales.
+- Posiciones iniciales opuestas cerca del borde interior, con ambos robots orientados hacia el centro.
+- Marcador persistente entre rondas; reiniciar la partida pone el marcador en cero.
 - Núcleo de dominio desacoplado del DOM y de los adaptadores gráficos/físicos.
 
 ## Requisitos
@@ -36,7 +37,7 @@ npm install
 npm run dev
 ```
 
-Abrí [http://localhost:4173](http://localhost:4173) y elegí **Iniciar práctica**.
+Abrí [http://localhost:4173](http://localhost:4173) y elegí **Iniciar combate**.
 
 Para validar el proyecto sin generar un build:
 
@@ -60,7 +61,7 @@ Este comando ejecuta el chequeo de TypeScript, ESLint y la suite de tests de Vit
 
 En **Remapear teclas** podés asignar otras teclas a las cuatro acciones de movimiento. `R` y `Esc` se mantienen fijas para evitar conflictos con reset y pausa.
 
-La tawara **no funciona como una pared invisible**. El robot puede abandonar físicamente la superficie y la sesión pasa a estado de salida cuando una parte de su huella supera el radio reglamentario.
+La tawara **no funciona como una pared invisible**. Los robots pueden abandonar físicamente la superficie y la ronda termina solo cuando la huella completa de uno queda fuera del radio exterior. Si ambos salen en el mismo paso físico, ambos suman un punto.
 
 ## Modelo de simulación
 
@@ -78,14 +79,16 @@ Simulación Rapier ←→ Render Three.js
 
 Algunas decisiones importantes del MVP:
 
-- El dominio contiene las reglas comprobables: dimensiones, estados de sesión, comandos y límites del dohyo.
+- El dominio contiene las reglas comprobables: dimensiones, marcador, estados de ronda, comandos y límites del dohyo.
 - Rapier modela la superficie y el cuerpo del robot, pero no agrega un muro perimetral que falsee el comportamiento del borde.
-- Rapier también modela el objetivo como un cuerpo dinámico independiente: el contacto robot-objetivo produce un empuje físico real y permite desplazarlo por todo el dohyo.
+- Rapier modela ambos robots como cuerpos dinámicos independientes, con colisión robot-robot.
+- La forma física de contacto incluye la cuña y la pala frontal; la tracción se aplica en los puntos de contacto de las ruedas solo cuando apoyan en el dohyo.
+- La IA rival calcula una persecución directa hacia el jugador en cada paso físico fijo.
 - El loop usa pasos físicos fijos para que el resultado no dependa directamente del framerate.
 - Three.js recibe snapshots físicos y se ocupa únicamente de la representación visual.
 - La entrada de teclado se normaliza antes de llegar a la aplicación.
 
-La explicación completa está en [`docs/architecture.md`](docs/architecture.md).
+La explicación completa está en [`docs/architecture.md`](docs/architecture.md). Las referencias de competencias y física están en [`docs/physics-reference.md`](docs/physics-reference.md).
 
 ## Scripts disponibles
 
@@ -104,7 +107,7 @@ La explicación completa está en [`docs/architecture.md`](docs/architecture.md)
 ```text
 src/
   app/          Orquestación de la sesión de práctica
-  domain/       Reglas puras de dohyo, robot, objetivo y estados
+  domain/       Reglas puras de dohyo, robots, puntaje y estados
   simulation/   Entrada, física Rapier y render Three.js
   ui/           HUD, menús y telemetría
 tests/
@@ -114,6 +117,7 @@ docs/
   architecture.md
   development-plan.md
   minisumo-rules.md
+  physics-reference.md
 ```
 
 ## Alcance y roadmap

@@ -66,7 +66,7 @@ export function createDohyoMesh(spec: DohyoSpec): THREE.Group {
   edgeAccent.name = 'dohyo-edge-accent';
   group.add(edgeAccent);
 
-  const startMarkMaterial = flatMaterial(0xf6f8f5, 0.35);
+  const startMarkMaterial = flatMaterial(0x6f4e37, 0.35);
   for (const z of [-0.05, 0.05]) {
     const startMark = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.004, 0.01), startMarkMaterial);
     startMark.position.set(0, 0.012, z);

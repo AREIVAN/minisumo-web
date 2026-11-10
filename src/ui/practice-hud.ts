@@ -1,4 +1,10 @@
-import { PRACTICE_STATE, type PracticeState } from '../domain/index';
+import {
+  PRACTICE_RIVAL_TYPE,
+  PRACTICE_STATE,
+  type PracticeRivalType,
+  type PracticeState,
+  type RoundOutcome,
+} from '../domain/index';
 import { CAMERA_MODE, type CameraMode } from '../simulation/render/three-scene';
 import {
   DEFAULT_KEY_BINDINGS,
@@ -8,12 +14,17 @@ import {
   type KeyBindings,
   type MovementAction,
 } from '../simulation/input/key-bindings';
+import { renderRivalSelector } from './rival-selector';
 
 export interface PracticeHudSnapshot {
   readonly status: PracticeState;
   readonly elapsedSeconds: number;
   readonly speed: number;
+  readonly playerScore: number;
+  readonly rivalScore: number;
+  readonly lastOutcome: RoundOutcome | null;
   readonly camera: CameraMode;
+  readonly rivalType: PracticeRivalType;
 }
 
 export interface PracticeHudActions {
@@ -23,6 +34,7 @@ export interface PracticeHudActions {
   readonly onReset: () => void;
   readonly onExit: () => void;
   readonly onCameraChange: (mode: CameraMode) => void;
+  readonly onRivalTypeChange: (rivalType: PracticeRivalType) => void;
   readonly onControlsToggle: () => void;
   readonly onKeyBindingsChange: (bindings: KeyBindings) => void;
   readonly onResetKeyBindings: () => void;
@@ -46,11 +58,11 @@ function actionFromElement(element: HTMLElement | null): MovementAction | undefi
 function statusLabel(status: PracticeState): string {
   switch (status) {
     case PRACTICE_STATE.RUNNING:
-      return 'EN PRÁCTICA';
+      return 'EN COMBATE';
     case PRACTICE_STATE.PAUSED:
       return 'EN PAUSA';
     case PRACTICE_STATE.OUT:
-      return 'FUERA DEL DOHYO';
+      return 'RONDA FINALIZADA';
     case PRACTICE_STATE.RESET:
       return 'REINICIANDO';
     default:
@@ -91,6 +103,13 @@ export class PracticeHud {
     const remapAction = actionFromElement(target.closest<HTMLElement>('[data-remap-action]'));
     if (remapAction) {
       this.startKeyCapture(remapAction);
+      return;
+    }
+
+    const rivalType = target.closest<HTMLElement>('[data-rival-type]')?.dataset
+      .rivalType as PracticeRivalType | undefined;
+    if (rivalType === PRACTICE_RIVAL_TYPE.MINISUMO || rivalType === PRACTICE_RIVAL_TYPE.CYLINDER) {
+      this.actions.onRivalTypeChange(rivalType);
       return;
     }
 
@@ -169,7 +188,7 @@ export class PracticeHud {
     if (errorMessage) errorMessage.textContent = message;
   }
 
-  public renderLanding(): void {
+  public renderLanding(rivalType: PracticeRivalType = PRACTICE_RIVAL_TYPE.MINISUMO): void {
     this.shell.innerHTML = `
       <div class="landing-layout">
         <header class="brand-lockup">
@@ -177,14 +196,15 @@ export class PracticeHud {
           <span>MINI SUMO <strong>ARENA</strong></span>
         </header>
         <section class="landing-card" aria-labelledby="landing-title">
-          <p class="eyebrow">PRÁCTICA MANUAL // 001</p>
-          <h1 id="landing-title">Entrená el borde.</h1>
+          <p class="eyebrow">COMBATE MANUAL VS IA // 001</p>
+          <h1 id="landing-title">Enfrentá al rival.</h1>
           <p class="landing-copy">
-            Controlá un único robot de 10 cm dentro de un dohyo reglamentario. La tawara no es una pared:
-            encontrá el límite con precisión.
+            Elegí un robot Minisumo automático o un cilindro físico. Sumás un punto cuando lo sacás completamente del dohyo;
+            si salís vos, el punto es del rival.
           </p>
+          ${renderRivalSelector(rivalType)}
           <button class="primary-button" type="button" data-action="start">
-            <span>Iniciar práctica</span><span aria-hidden="true">↗</span>
+            <span>Iniciar combate</span><span aria-hidden="true">↗</span>
           </button>
           <dl class="spec-list">
             <div><dt>DOHYO</dt><dd>Ø 77 cm</dd></div>
@@ -205,11 +225,21 @@ export class PracticeHud {
       <div class="practice-layout">
         <header class="practice-header">
           <div class="brand-lockup compact"><span class="brand-symbol" aria-hidden="true">+</span><span>MINI SUMO <strong>ARENA</strong></span></div>
-          <div class="practice-header-meta"><span class="session-label">PRÁCTICA MANUAL</span><span id="status-pill" class="status-pill" data-status="${snapshot.status}">${statusLabel(snapshot.status)}</span></div>
+          <div class="practice-header-meta"><span id="session-mode" class="session-label">COMBATE / ${snapshot.rivalType === PRACTICE_RIVAL_TYPE.MINISUMO ? '1v1' : 'OBJETO'}</span><span id="status-pill" class="status-pill" data-status="${snapshot.status}">${statusLabel(snapshot.status)}</span></div>
         </header>
 
-        <section class="telemetry-panel panel" aria-label="Telemetría de la práctica">
-          <p class="panel-kicker">TELEMETRÍA / LIVE</p>
+        <section class="telemetry-panel panel" aria-label="Marcador y telemetría del combate">
+          <p class="panel-kicker">MARCADOR / COMBATE</p>
+          <div class="scoreboard" aria-label="Puntaje">
+            <div><span>VOS</span><strong id="player-score">${snapshot.playerScore}</strong></div>
+            <span class="score-separator" aria-hidden="true">:</span>
+            <div><span>RIVAL</span><strong id="rival-score">${snapshot.rivalScore}</strong></div>
+          </div>
+          ${renderRivalSelector(
+            snapshot.rivalType,
+            snapshot.status === PRACTICE_STATE.RUNNING || snapshot.status === PRACTICE_STATE.PAUSED,
+          )}
+          <p class="panel-kicker telemetry-kicker">TELEMETRÍA / LIVE</p>
           <div class="telemetry-grid">
             <div><span class="metric-label">VELOCIDAD APROX.</span><strong id="speed-value">${formatSpeed(snapshot.speed)}</strong></div>
             <div><span class="metric-label">TIEMPO</span><strong id="time-value">${formatTime(snapshot.elapsedSeconds)}</strong></div>
@@ -245,7 +275,12 @@ export class PracticeHud {
         </aside>
 
         <div class="out-message" id="out-message" role="status" aria-live="assertive" hidden>
-          <span class="out-dot" aria-hidden="true"></span><div><strong>ROBOT FUERA DEL DOHYO</strong><span>Reiniciá para volver a practicar.</span></div>
+          <span class="out-dot" aria-hidden="true"></span>
+          <div>
+            <strong id="point-message">RONDA FINALIZADA</strong>
+            <span id="score-message">Marcador</span>
+            <button class="next-round-button" type="button" data-action="start">Jugar siguiente ronda</button>
+          </div>
         </div>
 
         <div class="camera-switcher" role="group" aria-label="Vista de cámara">
@@ -256,7 +291,7 @@ export class PracticeHud {
         <nav class="action-bar" aria-label="Acciones de práctica">
           <button id="pause-button" class="secondary-button" type="button" data-action="pause">Pausar <span class="button-key">Esc</span></button>
           <button id="resume-button" class="secondary-button" type="button" data-action="resume" hidden>Reanudar</button>
-          <button class="secondary-button" type="button" data-action="reset">Reiniciar <span class="button-key">R</span></button>
+          <button class="secondary-button" type="button" data-action="reset">Reiniciar combate <span class="button-key">R</span></button>
           <button class="text-button" type="button" data-action="exit">Salir</button>
         </nav>
 
@@ -269,25 +304,66 @@ export class PracticeHud {
   }
 
   public update(snapshot: PracticeHudSnapshot): void {
+    this.updateRivalSelector(
+      snapshot.rivalType,
+      snapshot.status !== PRACTICE_STATE.RUNNING && snapshot.status !== PRACTICE_STATE.PAUSED,
+    );
+    const sessionMode = this.shell.querySelector<HTMLElement>('#session-mode');
+    if (sessionMode) {
+      sessionMode.textContent =
+        snapshot.rivalType === PRACTICE_RIVAL_TYPE.MINISUMO ? 'COMBATE / 1v1' : 'COMBATE / OBJETO';
+    }
     const speed = this.shell.querySelector<HTMLElement>('#speed-value');
     const time = this.shell.querySelector<HTMLElement>('#time-value');
     const status = this.shell.querySelector<HTMLElement>('#status-pill');
     const outMessage = this.shell.querySelector<HTMLElement>('#out-message');
+    const playerScore = this.shell.querySelector<HTMLElement>('#player-score');
+    const rivalScore = this.shell.querySelector<HTMLElement>('#rival-score');
+    const pointMessage = this.shell.querySelector<HTMLElement>('#point-message');
+    const scoreMessage = this.shell.querySelector<HTMLElement>('#score-message');
     const pause = this.shell.querySelector<HTMLButtonElement>('#pause-button');
     const resume = this.shell.querySelector<HTMLButtonElement>('#resume-button');
-    if (!speed || !time || !status || !outMessage || !pause || !resume) return;
+    if (
+      !speed ||
+      !time ||
+      !status ||
+      !outMessage ||
+      !playerScore ||
+      !rivalScore ||
+      !pointMessage ||
+      !scoreMessage ||
+      !pause ||
+      !resume
+    )
+      return;
 
     speed.textContent = formatSpeed(snapshot.speed);
     time.textContent = formatTime(snapshot.elapsedSeconds);
     status.textContent = statusLabel(snapshot.status);
     status.dataset.status = snapshot.status;
+    playerScore.textContent = String(snapshot.playerScore);
+    rivalScore.textContent = String(snapshot.rivalScore);
     const isOut = snapshot.status === PRACTICE_STATE.OUT;
     outMessage.hidden = !isOut;
+    pointMessage.textContent =
+      snapshot.lastOutcome === 'player-scores'
+        ? 'PUNTO PARA VOS'
+        : snapshot.lastOutcome === 'rival-scores'
+          ? 'PUNTO PARA EL RIVAL'
+          : 'DOBLE SALIDA: PUNTO PARA CADA UNO';
+    scoreMessage.textContent = `Marcador ${snapshot.playerScore} : ${snapshot.rivalScore}`;
     pause.hidden = snapshot.status !== PRACTICE_STATE.RUNNING;
     resume.hidden = snapshot.status !== PRACTICE_STATE.PAUSED;
 
     this.shell.querySelectorAll<HTMLButtonElement>('[data-camera]').forEach((button) => {
       button.setAttribute('aria-pressed', String(button.dataset.camera === snapshot.camera));
+    });
+  }
+
+  private updateRivalSelector(rivalType: PracticeRivalType, canChange: boolean): void {
+    this.shell.querySelectorAll<HTMLButtonElement>('[data-rival-type]').forEach((button) => {
+      button.setAttribute('aria-pressed', String(button.dataset.rivalType === rivalType));
+      button.disabled = !canChange;
     });
   }
 

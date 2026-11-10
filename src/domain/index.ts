@@ -6,7 +6,6 @@ export {
   createDohyoSpec,
 } from './arena/dohyo-spec';
 export type { DohyoProfile, DohyoSpec, DohyoSpecInput } from './arena/dohyo-spec';
-
 export { PRACTICE_PUSHABLE_OBJECT_SPEC, createPushableObjectSpec } from './arena/pushable-object';
 export type { PushableObjectSpec } from './arena/pushable-object';
 
@@ -28,6 +27,8 @@ export {
   INITIAL_PRACTICE_SESSION,
   PRACTICE_EVENT,
   PRACTICE_STATE,
+  ROUND_OUTCOME,
+  PRACTICE_RIVAL_TYPE,
   transitionPracticeState,
 } from './session/practice-state';
 export type {
@@ -35,6 +36,8 @@ export type {
   PracticeEventType,
   PracticeSessionSnapshot,
   PracticeState,
+  RoundOutcome,
+  PracticeRivalType,
 } from './session/practice-state';
 export { PracticeSession } from './session/practice-session';
 

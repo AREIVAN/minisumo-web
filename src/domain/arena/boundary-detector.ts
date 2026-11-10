@@ -14,6 +14,7 @@ export interface BoundaryResult {
   readonly isOut: boolean;
   readonly footprint: readonly Vector2[];
   readonly outsidePoints: readonly Vector2[];
+  readonly minimumDistanceToCenter: number;
 }
 
 export const BOUNDARY_EPSILON = 1e-12;
@@ -31,8 +32,8 @@ export function transformRobotFootprint(robot: RobotSpec, pose: Pose2): readonly
   ];
 
   return localCorners.map((corner) => ({
-    x: pose.x + corner.x * cosine - corner.y * sine,
-    y: pose.y + corner.x * sine + corner.y * cosine,
+    x: pose.x + corner.x * cosine + corner.y * sine,
+    y: pose.y - corner.x * sine + corner.y * cosine,
   }));
 }
 
@@ -46,18 +47,31 @@ function isOutsideBoundary(point: Vector2, outerRadius: number): boolean {
   return Math.hypot(point.x, point.y) > outerRadius + BOUNDARY_EPSILON;
 }
 
+function distanceToRobotFootprintCenter(robot: RobotSpec, pose: Pose2): number {
+  const cosine = Math.cos(pose.yaw);
+  const sine = Math.sin(pose.yaw);
+  const localX = -pose.x * cosine + pose.y * sine;
+  const localY = -pose.x * sine - pose.y * cosine;
+  const distanceX = Math.max(Math.abs(localX) - robot.width / 2, 0);
+  const distanceY = Math.max(Math.abs(localY) - robot.depth / 2, 0);
+
+  return Math.hypot(distanceX, distanceY);
+}
+
 export function detectBoundary(dohyo: DohyoSpec, robot: RobotSpec, pose: Pose2): BoundaryResult {
   assertFinitePose(pose);
 
   const footprint = transformRobotFootprint(robot, pose);
   const outsidePoints = footprint.filter((point) => isOutsideBoundary(point, dohyo.outerRadius));
-  const isOut = outsidePoints.length > 0;
+  const minimumDistanceToCenter = distanceToRobotFootprintCenter(robot, pose);
+  const isOut = minimumDistanceToCenter > dohyo.outerRadius + BOUNDARY_EPSILON;
 
   return {
     status: isOut ? BOUNDARY_STATUS.OUT : BOUNDARY_STATUS.VALID,
     isOut,
     footprint,
     outsidePoints,
+    minimumDistanceToCenter,
   };
 }
 

@@ -22,9 +22,8 @@ Responsable de reglas que se puedan probar sin navegador:
 
 - `DohyoSpec`: diámetro de 77 cm, tawara de 2,5 cm, altura de 2,5 cm y radios derivados.
 - `RobotSpec`: dimensiones, masa, rueda, separación, centro de masa y límites.
-- `PushableObjectSpec`: dimensiones y masa del objetivo cilíndrico de práctica.
-- `PracticeSession`: estado de la sesión, pausa, reinicio y resultado de salida.
-- `BoundaryDetector`: prueba de la huella del robot contra el radio reglamentario.
+- `PracticeSession`: estado de la partida, puntaje, pausa, reinicio y resultado de cada ronda.
+- `BoundaryDetector`: calcula la distancia mínima del centro del dohyo al rectángulo rotado del robot y espera a que toda la huella quede fuera.
 - `DriveCommand`: acelerador, dirección y botón de reset.
 
 ### Simulación
@@ -33,14 +32,15 @@ Adaptador aislado para Rapier:
 
 - mundo físico en metros y kilogramos;
 - paso fijo de 1/120 s, independiente del framerate;
-- cuerpo dinámico para el robot;
-- cuerpo dinámico independiente para el objetivo, con colisión y masa configurables;
+- dos cuerpos dinámicos de robot, con colisión entre sí;
 - colisiones de ruedas, chasis y dohyo;
 - CCD cuando corresponda para evitar atravesar el borde a alta velocidad;
 - estado físico exportado a la capa de render como snapshot.
 - convención de orientación: el frente visual y lógico del robot es el eje local `-Z`; por eso `throttle +1` avanza hacia `-Z` y `steering +1` (derecha) produce yaw físico negativo.
-- la pose inicial de práctica se calcula cerca del borde interior, con el robot mirando hacia el centro y un margen de seguridad para mantener toda la huella dentro del dohyo.
-- el objetivo se calcula en el centro del área negra y su pose forma parte del snapshot; `reset` y `halt` afectan ambos cuerpos.
+- ambos robots comienzan en posiciones opuestas cerca del borde interior y mirando hacia el centro;
+- el rival usa la mitad de la velocidad máxima y recibe comandos de persecución en cada paso físico;
+- la forma de contacto usa una envolvente convexa que incluye la cuña y la pala frontal; la tracción se aplica en los puntos de contacto de las ruedas cuando están sobre el dohyo;
+- `reset` y `halt` afectan ambos robots.
 
 El dohyo no debe ser un cilindro con una pared vertical: eso convertiría el borde en una barrera y no en una salida. Se debe usar una superficie circular sin muro físico o una malla de contacto equivalente, más detección explícita del borde.
 
@@ -51,7 +51,7 @@ Three.js se ocupará solamente de:
 - cámara y luces;
 - dohyo, tawara, líneas y área exterior;
 - modelo del robot;
-- objetivo cilíndrico empujable;
+- segundo robot rival con color y pose propios;
 - transformación visual del snapshot físico;
 - indicadores de salida y estado.
 
@@ -79,13 +79,14 @@ src/
     arena/
       dohyo-spec.ts
       boundary-detector.ts
-      pushable-object.ts
     robot/
       robot-spec.ts
       robot-profile.ts
     session/
       practice-state.ts
   simulation/
+    ai/
+      pursuit-controller.ts
     physics/
       rapier-world.ts
       robot-body.ts
@@ -93,7 +94,6 @@ src/
       three-scene.ts
       dohyo-mesh.ts
       robot-mesh.ts
-      pushable-object-mesh.ts
     input/
       input-source.ts
       keyboard-input.ts
@@ -123,10 +123,11 @@ El juego nunca debe usar `deltaTime` variable directamente para decidir una sali
 
 - El robot puede desplazarse y girar con control manual.
 - La tawara no funciona como pared.
-- La huella completa del robot se evalúa contra el radio exterior.
+- La ronda no termina hasta que la huella completa del robot queda fuera del radio exterior.
 - El contacto con la línea blanca sigue siendo válido.
-- El robot puede contactar y desplazar el objetivo cilíndrico sin una animación visual separada de la física.
-- Una salida genera estado visible, detiene el robot y permite reiniciar.
+- Ambos robots chocan con física y sus mallas reflejan snapshots, sin animaciones separadas.
+- Si sale el jugador, puntúa el rival; si sale el rival, puntúa el jugador. Una salida simultánea suma un punto a cada uno.
+- Una salida completa detiene ambos cuerpos y permite iniciar otra ronda conservando el marcador.
 - El resultado es consistente con distintos framerates.
 
 ## Testing

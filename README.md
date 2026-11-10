@@ -3,6 +3,9 @@
 Simulador web de práctica para robots Mini Sumo. Conducí un robot de 10 cm dentro de un dohyo circular reglamentario y observá cómo responde una física basada en unidades reales, tracción diferencial y detección explícita del borde.
 
 > **Estado:** MVP funcional de práctica manual. La competencia autónoma, los sensores virtuales y los perfiles configurables forman parte de las próximas fases.
+
+> https://minisumo.areivan.com/
+> imagen de referencia:
 <img width="1470" height="876" alt="image" src="https://github.com/user-attachments/assets/9d4701ac-20d3-4780-a8fe-85492e56315d" />
 
 ## Qué incluye
